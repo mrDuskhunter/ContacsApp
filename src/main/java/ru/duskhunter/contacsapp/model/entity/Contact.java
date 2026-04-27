@@ -15,13 +15,6 @@ public class Contact {
     private Long id;
     private String firstName, lastName, telephone, email;
 
-    public Contact(String firstName, String lastName, String telephone, String email) {
-        this.firstName = firstName;
-        this.lastName = lastName;
-        this.telephone = telephone;
-        this.email = email;
-    }
-
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

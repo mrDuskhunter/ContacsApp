@@ -1,6 +1,5 @@
 package ru.duskhunter.contacsapp.model.entity;
 
-import lombok.Getter;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -23,5 +22,14 @@ public class ContactsDAO {
 
     public void addContact(Contact contact) {
         contacts.add(contact);
+    }
+
+    public boolean deleteByContactId(long id) {
+        return contacts.removeIf(contact -> contact.getId() == id);
+    }
+
+    public Contact updateContact(Contact contact) {
+        int id = contacts.indexOf(contact);
+        return contacts.set(id, contact);
     }
 }
