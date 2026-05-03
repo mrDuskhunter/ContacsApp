@@ -1,4 +1,4 @@
-package ru.duskhunter.contacsapp.dto;
+package ru.duskhunter.contacsapp.dto.contact;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotEmpty;
@@ -16,12 +16,12 @@ import java.util.Objects;
 @Getter
 @Setter
 public class ContactCreateDtoRequest {
-    @NotEmpty(message = "firstName cannot be empty")
-    @Size(min = 2, max = 50, message = "firstName min size: 2, max size: 50")
+    @NotEmpty(message = "First name cannot be empty")
+    @Size(min = 2, max = 50, message = "First name min size: 2, max size: 50")
     private String firstName;
 
-    @NotEmpty(message = "lastName cannot be empty")
-    @Size(min = 2, max = 50, message = "lastName min size: 2, max size: 50")
+    @NotEmpty(message = "Last name cannot be empty")
+    @Size(min = 2, max = 50, message = "Last name min size: 2, max size: 50")
     private String lastName;
 
     @NotEmpty(message = "telephone cannot be empty")

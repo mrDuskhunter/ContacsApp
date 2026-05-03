@@ -2,7 +2,7 @@ package ru.duskhunter.contacsapp.common.util;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import ru.duskhunter.contacsapp.model.entity.ServerResponse;
+import ru.duskhunter.contacsapp.dto.ServerResponse;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,12 +18,12 @@ public class ServerResponseHelper {
                 .build();
     }
 
-    public static <T> ResponseEntity<ServerResponse<T>> response(T result, HttpStatus httpStatus) {
+    public static <T> ResponseEntity<ServerResponse<T>> responseEntity(boolean success, T result, HttpStatus httpStatus, List<String> errorMessage) {
         return ResponseEntity.status(httpStatus).body(ServerResponse.<T>builder()
-                .success(true)
+                .success(success)
                 .result(result)
                 .httpStatus(httpStatus)
-                .errorMessages(new ArrayList<>())
+                .errorMessages(errorMessage)
                 .build());
     }
 }

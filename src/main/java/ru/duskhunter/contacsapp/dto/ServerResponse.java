@@ -1,4 +1,4 @@
-package ru.duskhunter.contacsapp.model.entity;
+package ru.duskhunter.contacsapp.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;

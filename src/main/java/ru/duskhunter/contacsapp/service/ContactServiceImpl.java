@@ -1,34 +1,34 @@
 package ru.duskhunter.contacsapp.service;
 
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Validator;
+import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import ru.duskhunter.contacsapp.common.util.ServerResponseHelper;
-import ru.duskhunter.contacsapp.dto.ContactCreateDtoRequest;
-import ru.duskhunter.contacsapp.dto.ContactDto;
+import ru.duskhunter.contacsapp.dto.contact.ContactCreateDtoRequest;
+import ru.duskhunter.contacsapp.dto.contact.ContactDto;
 import ru.duskhunter.contacsapp.model.entity.Contact;
-import ru.duskhunter.contacsapp.model.entity.ContactsDAO;
-import ru.duskhunter.contacsapp.model.entity.ServerResponse;
+import ru.duskhunter.contacsapp.model.repository.ContactRepo;
+import ru.duskhunter.contacsapp.dto.ServerResponse;
 
-import java.util.List;
-import java.util.Optional;
+import java.sql.SQLDataException;
+import java.util.*;
 
 @Service
+@RequiredArgsConstructor
 public class ContactServiceImpl implements ContactService {
-    private final ContactsDAO contacts;
+    private final ContactRepo contacts;
     private final ModelMapper mapper;
-
-    @Autowired
-    public ContactServiceImpl(ContactsDAO contacts, ModelMapper mapper) {
-        this.contacts = contacts;
-        this.mapper = mapper;
-    }
+    private final Validator validator;
 
     @Override
     public ServerResponse<List<ContactDto>> getContacts() {
-        List<ContactDto> contactDtos = contacts.getContacts()
+        List<ContactDto> contactDtos = contacts.findAll()
                 .stream()
                 .map(contact -> mapper.map(contact, ContactDto.class))
                 .toList();
@@ -36,45 +36,36 @@ public class ContactServiceImpl implements ContactService {
     }
 
     @Override
-    public ResponseEntity<ServerResponse<ContactDto>> responseGetContactById(long contactId) {
-        Optional<Contact> contactOptional = getContactById(contactId);
+    public ResponseEntity<ServerResponse<ContactDto>> getContactById(long contactId) {
+        Optional<Contact> contactOptional = contacts.findById(contactId);
 
-        return contactOptional.map(contact -> ServerResponseHelper.response(mapper.map(contact, ContactDto.class), HttpStatus.OK))
-                .orElseGet(() -> ServerResponseHelper.response(null, HttpStatus.NO_CONTENT));
+        return contactOptional.map(contact -> ServerResponseHelper.responseEntity(true, mapper.map(contact, ContactDto.class), HttpStatus.OK, List.of()))
+                .orElseGet(() -> ServerResponseHelper.responseEntity(false, null,
+                        HttpStatus.NO_CONTENT, List.of(String.format("The contact with id %s does not exist", contactId))));
     }
 
     @Override
     public ServerResponse<ContactDto> createContact(ContactCreateDtoRequest contactCreateDtoRequest) {
         Contact contact = mapper.map(contactCreateDtoRequest, Contact.class);
+        List<String> entityErrors = validateContact(contact);
 
-        int countCheckingForUniquenessId = 0;
-        boolean isNonUniquenessId = false;
-
-        do {
-            contact.setId((long) contacts.getContacts().size());
-            countCheckingForUniquenessId++;
-            if (countCheckingForUniquenessId > 7) {
-                isNonUniquenessId = true;
-                break;
-            }
-        } while (matchId(contact.getId()));
-
-        if (isNonUniquenessId) {
-            return ServerResponseHelper.response(false, mapper.map(contact, ContactDto.class), HttpStatus.INTERNAL_SERVER_ERROR,
-                    List.of("Id assignment error"));
+        if (!entityErrors.isEmpty()) {
+            return ServerResponseHelper.response(false, mapper.map(contact, ContactDto.class), HttpStatus.BAD_REQUEST,
+                    entityErrors);
         }
 
-        Optional<Contact> optNewContact = getContactById(contact.getId());
-
-        return optNewContact.isEmpty()
-                ? ServerResponseHelper.response(true, mapper.map(contact, ContactDto.class), HttpStatus.CONFLICT,
-                List.of("Error creating a contact"))
-                : ServerResponseHelper.response(true, mapper.map(contact, ContactDto.class), HttpStatus.CREATED, List.of());
+        try {
+            Contact savedContact = contacts.saveAndFlush(contact);
+            return ServerResponseHelper.response(true, mapper.map(savedContact, ContactDto.class), HttpStatus.CREATED, List.of());
+        } catch (DataIntegrityViolationException e) {
+            return ServerResponseHelper.response(false, mapper.map(contact, ContactDto.class), HttpStatus.CONFLICT,
+                    List.of("Error creating a contact"));
+        }
     }
 
     @Override
     public ServerResponse<ContactDto> deleteContactById(long contactId) {
-        Optional<Contact> contactOptional = getContactById(contactId);
+        Optional<Contact> contactOptional = contacts.findById(contactId);
         if (contactOptional.isEmpty()) {
             return ServerResponseHelper.response(false, null, HttpStatus.NO_CONTENT,
                     List.of(String.format("The contact with id %s does not exist", contactId)));
@@ -82,10 +73,17 @@ public class ContactServiceImpl implements ContactService {
 
         ContactDto contactDto = mapper.map(contactOptional.get(), ContactDto.class);
 
-        return contacts.deleteByContactId(contactId)
-                ? ServerResponseHelper.response(true, contactDto, HttpStatus.OK, List.of())
-                : ServerResponseHelper.response(false, contactDto, HttpStatus.INTERNAL_SERVER_ERROR,
-                List.of(String.format("Unexpected server error during deletion operation the contact with id %s", contactId)));
+        try {
+            contacts.deleteById(contactId);
+            Optional<Contact> optionalContact = contacts.findById(contactId);
+            if (optionalContact.isPresent()) {
+                throw new SQLDataException();
+            }
+        } catch (Exception e) {
+            return ServerResponseHelper.response(false, contactDto, HttpStatus.INTERNAL_SERVER_ERROR,
+                    List.of(String.format("Unexpected server error during deletion operation the contact with id %s", contactId)));
+        }
+        return ServerResponseHelper.response(true, contactDto, HttpStatus.OK, List.of());
     }
 
     @Override
@@ -97,16 +95,36 @@ public class ContactServiceImpl implements ContactService {
                     List.of(String.format("The contact with id %s does not exist", id)));
         }
 
-        Contact contact = contacts.updateContact(mapper.map(contactDto, Contact.class));
+        Contact contact = mapper.map(contactDto, Contact.class);
 
-        return ServerResponseHelper.response(true, mapper.map(contact, ContactDto.class), HttpStatus.OK, List.of());
+        List<String> entityErrors = validateContact(contact);
+
+        if (!entityErrors.isEmpty()) {
+            return ServerResponseHelper.response(false, mapper.map(contact, ContactDto.class), HttpStatus.BAD_REQUEST,
+                    entityErrors);
+        }
+
+        try {
+            Contact savedContact = contacts.saveAndFlush(contact);
+            return ServerResponseHelper.response(true, mapper.map(savedContact, ContactDto.class), HttpStatus.OK, List.of());
+        } catch (DataIntegrityViolationException e) {
+            return ServerResponseHelper.response(true, mapper.map(contact, ContactDto.class), HttpStatus.CONFLICT,
+                    List.of("Error update a contact"));
+        }
     }
 
     private boolean matchId(long contactId) {
-        return contacts.getContacts().stream().mapToLong(Contact::getId).anyMatch(id -> id == contactId);
+        return contacts.findAll().stream().mapToLong(Contact::getId).anyMatch(id -> id == contactId);
     }
 
-    private Optional<Contact> getContactById(long contactId) {
-        return contacts.getContacts().stream().filter(c -> c.getId() == contactId).findFirst();
+    private List<String> validateContact(Contact contact) throws ConstraintViolationException {
+        Set<ConstraintViolation<Contact>> violations = validator.validate(contact);
+        List<String> errors = new ArrayList<>();
+        if (!violations.isEmpty()) {
+            errors = violations.stream()
+                    .map(ConstraintViolation::getMessage)
+                    .toList();
+        }
+        return errors;
     }
 }

@@ -2,11 +2,14 @@ package ru.duskhunter.contacsapp.controller;
 
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.ObjectError;
 import org.springframework.web.bind.annotation.*;
-import ru.duskhunter.contacsapp.dto.ContactCreateDtoRequest;
-import ru.duskhunter.contacsapp.dto.ContactDto;
-import ru.duskhunter.contacsapp.model.entity.ServerResponse;
+import ru.duskhunter.contacsapp.common.util.ServerResponseHelper;
+import ru.duskhunter.contacsapp.dto.contact.ContactCreateDtoRequest;
+import ru.duskhunter.contacsapp.dto.contact.ContactDto;
+import ru.duskhunter.contacsapp.dto.ServerResponse;
 import ru.duskhunter.contacsapp.service.ContactService;
 
 import java.util.List;
@@ -28,11 +31,11 @@ public class ContactController {
 
     @GetMapping("/get/{id}")
     public ResponseEntity<ServerResponse<ContactDto>> getContactById(@PathVariable long id) {
-        return contactService.responseGetContactById(id);
+        return contactService.getContactById(id);
     }
 
     @PostMapping("/create")
-    public ServerResponse<ContactDto> createContact(@Valid @RequestBody ContactCreateDtoRequest contact){
+    public ServerResponse<ContactDto> createContact(@Valid @RequestBody ContactCreateDtoRequest contact) {
         return contactService.createContact(contact);
     }
 
