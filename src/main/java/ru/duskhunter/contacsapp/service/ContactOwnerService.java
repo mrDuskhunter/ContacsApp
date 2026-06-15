@@ -1,0 +1,16 @@
+package ru.duskhunter.contacsapp.service;
+
+import org.springframework.http.ResponseEntity;
+import ru.duskhunter.contacsapp.dto.ServerResponse;
+import ru.duskhunter.contacsapp.dto.contactowner.ContactCreateOwnerDto;
+import ru.duskhunter.contacsapp.dto.contactowner.ContactOwnerDto;
+
+import java.util.List;
+
+public interface ContactOwnerService {
+    ServerResponse<List<ContactOwnerDto>> getOwners();
+    ResponseEntity<ServerResponse<ContactOwnerDto>> getOwnerById(long ownerId);
+    ServerResponse<ContactOwnerDto> createOwner(ContactCreateOwnerDto owner);
+    ServerResponse<ContactOwnerDto> deleteOwnerById(long ownerId);
+    ServerResponse<ContactOwnerDto> updateOwner(ContactOwnerDto owner);
+}

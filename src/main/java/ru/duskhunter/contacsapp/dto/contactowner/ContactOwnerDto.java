@@ -14,7 +14,7 @@ import ru.duskhunter.contacsapp.model.Role;
 @AllArgsConstructor
 @Getter
 @Setter
-public class ContactOwner {
+public class ContactOwnerDto {
     @NotEmpty(message = "ID cannot be empty")
     private long id;
 

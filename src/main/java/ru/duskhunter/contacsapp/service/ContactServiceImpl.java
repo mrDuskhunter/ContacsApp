@@ -1,8 +1,5 @@
 package ru.duskhunter.contacsapp.service;
 
-import jakarta.validation.ConstraintViolation;
-import jakarta.validation.ConstraintViolationException;
-import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -10,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import ru.duskhunter.contacsapp.common.util.ServerResponseHelper;
+import ru.duskhunter.contacsapp.common.util.Validator;
 import ru.duskhunter.contacsapp.dto.contact.ContactCreateDtoRequest;
 import ru.duskhunter.contacsapp.dto.contact.ContactDto;
 import ru.duskhunter.contacsapp.model.entity.Contact;
@@ -24,7 +22,6 @@ import java.util.*;
 public class ContactServiceImpl implements ContactService {
     private final ContactRepo contacts;
     private final ModelMapper mapper;
-    private final Validator validator;
 
     @Override
     public ServerResponse<List<ContactDto>> getContacts() {
@@ -47,7 +44,7 @@ public class ContactServiceImpl implements ContactService {
     @Override
     public ServerResponse<ContactDto> createContact(ContactCreateDtoRequest contactCreateDtoRequest) {
         Contact contact = mapper.map(contactCreateDtoRequest, Contact.class);
-        List<String> entityErrors = validateContact(contact);
+        List<String> entityErrors = Validator.validate(contact);
 
         if (!entityErrors.isEmpty()) {
             return ServerResponseHelper.response(false, mapper.map(contact, ContactDto.class), HttpStatus.BAD_REQUEST,
@@ -97,7 +94,7 @@ public class ContactServiceImpl implements ContactService {
 
         Contact contact = mapper.map(contactDto, Contact.class);
 
-        List<String> entityErrors = validateContact(contact);
+        List<String> entityErrors = Validator.validate(contact);
 
         if (!entityErrors.isEmpty()) {
             return ServerResponseHelper.response(false, mapper.map(contact, ContactDto.class), HttpStatus.BAD_REQUEST,
@@ -115,16 +112,5 @@ public class ContactServiceImpl implements ContactService {
 
     private boolean matchId(long contactId) {
         return contacts.findAll().stream().mapToLong(Contact::getId).anyMatch(id -> id == contactId);
-    }
-
-    private List<String> validateContact(Contact contact) throws ConstraintViolationException {
-        Set<ConstraintViolation<Contact>> violations = validator.validate(contact);
-        List<String> errors = new ArrayList<>();
-        if (!violations.isEmpty()) {
-            errors = violations.stream()
-                    .map(ConstraintViolation::getMessage)
-                    .toList();
-        }
-        return errors;
     }
 }
