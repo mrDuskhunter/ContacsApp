@@ -46,6 +46,11 @@ public class Contact {
     @Size(min = 2, max = 50, message = "email max size: 50")
     private String email;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_id", nullable = false)
+    @NotNull(message = "Owner cannot be null")
+    private ContactOwner owner;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     LocalDateTime createdAt;
 

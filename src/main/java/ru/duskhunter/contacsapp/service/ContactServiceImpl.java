@@ -22,6 +22,7 @@ import java.util.*;
 public class ContactServiceImpl implements ContactService {
     private final ContactRepo contacts;
     private final ModelMapper mapper;
+    private final Validator validator;
 
     @Override
     public ServerResponse<List<ContactDto>> getContacts() {
@@ -44,7 +45,7 @@ public class ContactServiceImpl implements ContactService {
     @Override
     public ServerResponse<ContactDto> createContact(ContactCreateDtoRequest contactCreateDtoRequest) {
         Contact contact = mapper.map(contactCreateDtoRequest, Contact.class);
-        List<String> entityErrors = Validator.validate(contact);
+        List<String> entityErrors = validator.validate(contact);
 
         if (!entityErrors.isEmpty()) {
             return ServerResponseHelper.response(false, mapper.map(contact, ContactDto.class), HttpStatus.BAD_REQUEST,
@@ -94,7 +95,7 @@ public class ContactServiceImpl implements ContactService {
 
         Contact contact = mapper.map(contactDto, Contact.class);
 
-        List<String> entityErrors = Validator.validate(contact);
+        List<String> entityErrors = validator.validate(contact);
 
         if (!entityErrors.isEmpty()) {
             return ServerResponseHelper.response(false, mapper.map(contact, ContactDto.class), HttpStatus.BAD_REQUEST,

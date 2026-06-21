@@ -24,6 +24,7 @@ import java.util.Optional;
 public class ContactOwnerServiceImpl implements ContactOwnerService {
     private final ContactOwnerRepo ownerRepo;
     private final ModelMapper mapper;
+    private final Validator validator;
 
     @Override
     public ServerResponse<List<ContactOwnerDto>> getOwners() {
@@ -40,17 +41,22 @@ public class ContactOwnerServiceImpl implements ContactOwnerService {
 
         return contactOwnerOptional.map(contact -> ServerResponseHelper.responseEntity(true, mapper.map(contact, ContactOwnerDto.class), HttpStatus.OK, List.of()))
                 .orElseGet(() -> ServerResponseHelper.responseEntity(false, null,
-                        HttpStatus.NO_CONTENT, List.of(String.format("The owner with id %s does not exist", ownerId))));
+                        HttpStatus.NO_CONTENT, getErrorOwnerIdNotExist(ownerId)));
     }
 
     @Override
     public ServerResponse<ContactOwnerDto> createOwner(ContactCreateOwnerDto contactCreateOwnerDto) {
         ContactOwner owner = mapper.map(contactCreateOwnerDto, ContactOwner.class);
-        List<String> entityErrors = Validator.validate(owner);
+        List<String> entityErrors = validator.validate(owner);
 
         if (!entityErrors.isEmpty()) {
             return ServerResponseHelper.response(false, mapper.map(owner, ContactOwnerDto.class), HttpStatus.BAD_REQUEST,
                     entityErrors);
+        }
+
+        if (ownerRepo.findByEmail(owner.getEmail()).isPresent()) {
+            return ServerResponseHelper.response(false, mapper.map(owner, ContactOwnerDto.class), HttpStatus.CONFLICT,
+                    List.of("User with this email already exist"));
         }
 
         try {
@@ -67,7 +73,7 @@ public class ContactOwnerServiceImpl implements ContactOwnerService {
         Optional<ContactOwner> contactOptional = ownerRepo.findById(ownerId);
         if (contactOptional.isEmpty()) {
             return ServerResponseHelper.response(false, null, HttpStatus.NO_CONTENT,
-                    List.of(String.format("The owner with id %s does not exist", ownerId)));
+                    getErrorOwnerIdNotExist(ownerId));
         }
 
         ContactOwnerDto contactOwnerDto = mapper.map(contactOptional.get(), ContactOwnerDto.class);
@@ -91,12 +97,18 @@ public class ContactOwnerServiceImpl implements ContactOwnerService {
 
         if (!matchId(id)) {
             return ServerResponseHelper.response(false, contactOwnerDto, HttpStatus.NO_CONTENT,
-                    List.of(String.format("The owner with id %s does not exist", id)));
+                    getErrorOwnerIdNotExist(id));
+        }
+
+        //equals email
+        if (!ownerRepo.findEmailById(id).equals(contactOwnerDto.getEmail())) {
+            return ServerResponseHelper.response(false, contactOwnerDto, HttpStatus.CONFLICT,
+                    List.of("These users have different emails"));
         }
 
         ContactOwner contactOwner = mapper.map(contactOwnerDto, ContactOwner.class);
 
-        List<String> entityErrors = Validator.validate(contactOwner);
+        List<String> entityErrors = validator.validate(contactOwner);
 
         if (!entityErrors.isEmpty()) {
             return ServerResponseHelper.response(false, mapper.map(contactOwner, ContactOwnerDto.class), HttpStatus.BAD_REQUEST,
@@ -107,12 +119,16 @@ public class ContactOwnerServiceImpl implements ContactOwnerService {
             ContactOwner savedContactOwner = ownerRepo.saveAndFlush(contactOwner);
             return ServerResponseHelper.response(true, mapper.map(savedContactOwner, ContactOwnerDto.class), HttpStatus.OK, List.of());
         } catch (DataIntegrityViolationException e) {
-            return ServerResponseHelper.response(true, mapper.map(contactOwner, ContactOwnerDto.class), HttpStatus.CONFLICT,
+            return ServerResponseHelper.response(false, mapper.map(contactOwner, ContactOwnerDto.class), HttpStatus.CONFLICT,
                     List.of("Error update owner"));
         }
     }
 
     private boolean matchId(long contactId) {
         return ownerRepo.findAll().stream().mapToLong(ContactOwner::getId).anyMatch(id -> id == contactId);
+    }
+
+    private List<String> getErrorOwnerIdNotExist(long ownerId) {
+        return List.of(String.format("The owner with id %d does not exist", ownerId));
     }
 }

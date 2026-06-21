@@ -1,6 +1,5 @@
 package ru.duskhunter.contacsapp.service;
 
-import jakarta.validation.Validator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -10,17 +9,18 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.modelmapper.ModelMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import ru.duskhunter.contacsapp.common.util.Validator;
+import ru.duskhunter.contacsapp.dto.ServerResponse;
 import ru.duskhunter.contacsapp.dto.contact.ContactCreateDtoRequest;
 import ru.duskhunter.contacsapp.dto.contact.ContactDto;
 import ru.duskhunter.contacsapp.model.entity.Contact;
+import ru.duskhunter.contacsapp.model.entity.ContactOwner;
 import ru.duskhunter.contacsapp.model.repository.ContactRepo;
-import ru.duskhunter.contacsapp.dto.ServerResponse;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -111,10 +111,10 @@ class ContactServiceImplTest {
 
         ServerResponse<List<ContactDto>> response = contactService.getContacts();
 
-        verify(contacts,times(1)).findAll();
+        verify(contacts, times(1)).findAll();
 
         assertTrue(response.isSuccess());
-        assertEquals(HttpStatus.OK,response.getHttpStatus());
+        assertEquals(HttpStatus.OK, response.getHttpStatus());
         assertEquals(0, response.getErrorMessages().size());
         assertEquals(10, response.getResult().size());
         assertEquals(mapToContactDto(initContacts()), response.getResult());
@@ -134,10 +134,10 @@ class ContactServiceImplTest {
 
         ServerResponse<List<ContactDto>> response = contactService.getContacts();
 
-        verify(contacts,times(1)).findAll();
+        verify(contacts, times(1)).findAll();
 
         assertTrue(response.isSuccess());
-        assertEquals(HttpStatus.OK,response.getHttpStatus());
+        assertEquals(HttpStatus.OK, response.getHttpStatus());
         assertEquals(0, response.getErrorMessages().size());
         assertEquals(0, response.getResult().size());
     }
@@ -160,7 +160,7 @@ class ContactServiceImplTest {
 
         ResponseEntity<ServerResponse<ContactDto>> response = contactService.getContactById(0);
 
-        verify(contacts,times(1)).findById(anyLong());
+        verify(contacts, times(1)).findById(anyLong());
 
         assertTrue(response.getBody().isSuccess());
         assertEquals(HttpStatus.OK, response.getBody().getHttpStatus());
@@ -191,7 +191,7 @@ class ContactServiceImplTest {
 
         ResponseEntity<ServerResponse<ContactDto>> response = contactService.getContactById(13);
 
-        verify(contacts,times(1)).findById(anyLong());
+        verify(contacts, times(1)).findById(anyLong());
 
         assertFalse(response.getBody().isSuccess());
         assertEquals(HttpStatus.NO_CONTENT, response.getBody().getHttpStatus());
@@ -202,7 +202,7 @@ class ContactServiceImplTest {
     }
 
     @Test
-    void shouldCreateContactWhenContactsIsEmpty(){
+    void shouldCreateContactWhenContactsIsEmpty() {
         /*
         3.1 create
             3.1.1 boolean success == true
@@ -223,13 +223,13 @@ class ContactServiceImplTest {
 
         ContactCreateDtoRequest dto = new ContactCreateDtoRequest(firstName, lastName, telephone, email);
 
-        when(validator.validate(any(Contact.class))).thenReturn(Set.of());
         when(contacts.saveAndFlush(any(Contact.class)))
-                .thenReturn(new Contact(1L, firstName, lastName, telephone, email, LocalDateTime.now()));
+                .thenReturn(new Contact(1L, firstName, lastName, telephone, email, createContactOwner(), LocalDateTime.now()));
+        when(validator.validate(any(Contact.class))).thenReturn(List.of());
 
         ServerResponse<ContactDto> response = contactService.createContact(dto);
 
-        verify(contacts,times(1)).saveAndFlush(any(Contact.class));
+        verify(contacts, times(1)).saveAndFlush(any(Contact.class));
 
         assertTrue(response.isSuccess());
         assertEquals(HttpStatus.CREATED, response.getHttpStatus());
@@ -244,7 +244,7 @@ class ContactServiceImplTest {
     }
 
     @Test
-    void ShouldCreateContactWhenContactsIsNonEmpty(){
+    void ShouldCreateContactWhenContactsIsNonEmpty() {
         /*
         3.2 create
             3.2.1 boolean success == true
@@ -263,15 +263,15 @@ class ContactServiceImplTest {
         String telephone = "+7 (123) 456-78-90";
         String email = "email0@mail.ru";
 
-        when(validator.validate(any(Contact.class))).thenReturn(Set.of());
         when(contacts.saveAndFlush(any(Contact.class)))
-                .thenReturn(new Contact(10L, firstName, lastName, telephone, email, LocalDateTime.now()));
+                .thenReturn(new Contact(10L, firstName, lastName, telephone, email, createContactOwner(), LocalDateTime.now()));
+        when(validator.validate(any(Contact.class))).thenReturn(List.of());
 
         ContactCreateDtoRequest dto = new ContactCreateDtoRequest(firstName, lastName, telephone, email);
 
         ServerResponse<ContactDto> response = contactService.createContact(dto);
 
-        verify(contacts,times(1)).saveAndFlush(any(Contact.class));
+        verify(contacts, times(1)).saveAndFlush(any(Contact.class));
 
         assertTrue(response.isSuccess());
         assertEquals(HttpStatus.CREATED, response.getHttpStatus());
@@ -288,12 +288,16 @@ class ContactServiceImplTest {
     private List<Contact> initContacts() {
         List<Contact> contacts = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
-            contacts.add(new Contact((long) i, "Name" + i, "lastName" + i, "+7 (234) 567 89 2" + i, "email" + i + "@mail.ru", LocalDateTime.now()));
+            contacts.add(new Contact((long) i, "Name" + i, "lastName" + i, "+7 (234) 567 89 2" + i, "email" + i + "@mail.ru", createContactOwner(), LocalDateTime.now()));
         }
         return contacts;
     }
 
-    private List<ContactDto> mapToContactDto(List<Contact> contacts){
+    private List<ContactDto> mapToContactDto(List<Contact> contacts) {
         return contacts.stream().map(contact -> modelMapper.map(contact, ContactDto.class)).toList();
+    }
+
+    private ContactOwner createContactOwner() {
+        return ContactOwner.builder().build();
     }
 }
