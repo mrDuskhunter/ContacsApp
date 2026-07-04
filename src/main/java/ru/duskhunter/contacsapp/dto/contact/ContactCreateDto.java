@@ -1,13 +1,8 @@
 package ru.duskhunter.contacsapp.dto.contact;
 
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import jakarta.validation.constraints.*;
+import lombok.*;
+import ru.duskhunter.contacsapp.model.entity.ContactOwner;
 
 import java.util.Objects;
 
@@ -15,7 +10,7 @@ import java.util.Objects;
 @NoArgsConstructor
 @Getter
 @Setter
-public class ContactCreateDtoRequest {
+public class ContactCreateDto {
     @NotEmpty(message = "First name cannot be empty")
     @Size(min = 2, max = 50, message = "First name min size: 2, max size: 50")
     private String firstName;
@@ -32,11 +27,14 @@ public class ContactCreateDtoRequest {
     @Size(min = 2, max = 50, message = "email max size: 50")
     private String email;
 
+    @NotNull(message = "Owner cannot be null")
+    private ContactOwner owner;
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        ContactCreateDtoRequest that = (ContactCreateDtoRequest) o;
+        ContactCreateDto that = (ContactCreateDto) o;
         return Objects.equals(firstName, that.firstName) && Objects.equals(lastName, that.lastName) && Objects.equals(telephone, that.telephone) && Objects.equals(email, that.email);
     }
 

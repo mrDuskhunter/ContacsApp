@@ -8,14 +8,15 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import ru.duskhunter.contacsapp.common.util.ServerResponseHelper;
 import ru.duskhunter.contacsapp.common.util.Validator;
-import ru.duskhunter.contacsapp.dto.contact.ContactCreateDtoRequest;
+import ru.duskhunter.contacsapp.dto.ServerResponse;
+import ru.duskhunter.contacsapp.dto.contact.ContactCreateDto;
 import ru.duskhunter.contacsapp.dto.contact.ContactDto;
 import ru.duskhunter.contacsapp.model.entity.Contact;
 import ru.duskhunter.contacsapp.model.repository.ContactRepo;
-import ru.duskhunter.contacsapp.dto.ServerResponse;
 
 import java.sql.SQLDataException;
-import java.util.*;
+import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -43,8 +44,8 @@ public class ContactServiceImpl implements ContactService {
     }
 
     @Override
-    public ServerResponse<ContactDto> createContact(ContactCreateDtoRequest contactCreateDtoRequest) {
-        Contact contact = mapper.map(contactCreateDtoRequest, Contact.class);
+    public ServerResponse<ContactDto> createContact(ContactCreateDto contactCreateDto) {
+        Contact contact = mapper.map(contactCreateDto, Contact.class);
         List<String> entityErrors = validator.validate(contact);
 
         if (!entityErrors.isEmpty()) {
@@ -52,12 +53,20 @@ public class ContactServiceImpl implements ContactService {
                     entityErrors);
         }
 
+        if (contacts.findByEmail(contact.getEmail()).isPresent()) {
+            return getResponseContactWithThisAttributeAlreadyExists("email: " + contact.getEmail(), contact);
+        }
+
+        if (contacts.findByTelephone(contact.getTelephone()).isPresent()) {
+            return getResponseContactWithThisAttributeAlreadyExists("telephone: " + contact.getTelephone(),contact);
+        }
+
         try {
             Contact savedContact = contacts.saveAndFlush(contact);
             return ServerResponseHelper.response(true, mapper.map(savedContact, ContactDto.class), HttpStatus.CREATED, List.of());
         } catch (DataIntegrityViolationException e) {
             return ServerResponseHelper.response(false, mapper.map(contact, ContactDto.class), HttpStatus.CONFLICT,
-                    List.of("Error creating a contact"));
+                    List.of("Error creating contact"));
         }
     }
 
@@ -65,8 +74,7 @@ public class ContactServiceImpl implements ContactService {
     public ServerResponse<ContactDto> deleteContactById(long contactId) {
         Optional<Contact> contactOptional = contacts.findById(contactId);
         if (contactOptional.isEmpty()) {
-            return ServerResponseHelper.response(false, null, HttpStatus.NO_CONTENT,
-                    List.of(String.format("The contact with id %s does not exist", contactId)));
+            return getResponseContactWithIdNotExists(contactId, null);
         }
 
         ContactDto contactDto = mapper.map(contactOptional.get(), ContactDto.class);
@@ -88,9 +96,8 @@ public class ContactServiceImpl implements ContactService {
     public ServerResponse<ContactDto> updateContact(ContactDto contactDto) {
         Long id = contactDto.getId();
 
-        if (!matchId(id)) {
-            return ServerResponseHelper.response(false, contactDto, HttpStatus.NO_CONTENT,
-                    List.of(String.format("The contact with id %s does not exist", id)));
+        if (!contacts.existsById(id)) {
+            return getResponseContactWithIdNotExists(id, contactDto);
         }
 
         Contact contact = mapper.map(contactDto, Contact.class);
@@ -102,16 +109,37 @@ public class ContactServiceImpl implements ContactService {
                     entityErrors);
         }
 
+        String existingEmail = contacts.findEmailById(id).orElse(null);
+        String existingTelephone = contacts.findTelephoneById(id).orElse(null);
+
+        if (existingEmail != null && !existingEmail.equals(contact.getEmail())) {
+            if (contacts.findByEmail(contact.getEmail()).isPresent()) {
+                return getResponseContactWithThisAttributeAlreadyExists("email: " + contact.getEmail(), contact);
+            }
+        }
+
+        if (existingTelephone != null && !existingTelephone.equals(contact.getTelephone())) {
+            if (contacts.findByTelephone(contact.getTelephone()).isPresent()) {
+                return getResponseContactWithThisAttributeAlreadyExists("telephone: " + contact.getTelephone(),contact);
+            }
+        }
+
         try {
             Contact savedContact = contacts.saveAndFlush(contact);
             return ServerResponseHelper.response(true, mapper.map(savedContact, ContactDto.class), HttpStatus.OK, List.of());
         } catch (DataIntegrityViolationException e) {
-            return ServerResponseHelper.response(true, mapper.map(contact, ContactDto.class), HttpStatus.CONFLICT,
-                    List.of("Error update a contact"));
+            return ServerResponseHelper.response(false, mapper.map(contact, ContactDto.class), HttpStatus.CONFLICT,
+                    List.of("Error update contact"));
         }
     }
 
-    private boolean matchId(long contactId) {
-        return contacts.findAll().stream().mapToLong(Contact::getId).anyMatch(id -> id == contactId);
+    private ServerResponse<ContactDto> getResponseContactWithThisAttributeAlreadyExists(String message, Contact contact) {
+        return ServerResponseHelper.response(false, mapper.map(contact, ContactDto.class), HttpStatus.CONFLICT,
+                List.of(String.format("Contact with this %s - already exist", message)));
+    }
+
+    private ServerResponse<ContactDto> getResponseContactWithIdNotExists(Long id, ContactDto contactDto) {
+        return ServerResponseHelper.response(false, contactDto, HttpStatus.NO_CONTENT,
+                List.of(String.format("The contact with id %s does not exist", id)));
     }
 }

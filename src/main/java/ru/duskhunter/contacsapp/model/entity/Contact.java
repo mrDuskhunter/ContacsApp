@@ -12,6 +12,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 
 @Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity

@@ -2,12 +2,9 @@ package ru.duskhunter.contacsapp.controller;
 
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.ObjectError;
 import org.springframework.web.bind.annotation.*;
-import ru.duskhunter.contacsapp.common.util.ServerResponseHelper;
-import ru.duskhunter.contacsapp.dto.contact.ContactCreateDtoRequest;
+import ru.duskhunter.contacsapp.dto.contact.ContactCreateDto;
 import ru.duskhunter.contacsapp.dto.contact.ContactDto;
 import ru.duskhunter.contacsapp.dto.ServerResponse;
 import ru.duskhunter.contacsapp.service.ContactService;
@@ -35,7 +32,7 @@ public class ContactController {
     }
 
     @PostMapping("/create")
-    public ServerResponse<ContactDto> createContact(@Valid @RequestBody ContactCreateDtoRequest contact) {
+    public ServerResponse<ContactDto> createContact(@Valid @RequestBody ContactCreateDto contact) {
         return contactService.createContact(contact);
     }
 

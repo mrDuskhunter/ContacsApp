@@ -10,7 +10,7 @@ import lombok.Setter;
 @NoArgsConstructor
 @Getter
 @Setter
-public class ContactDto extends ContactCreateDtoRequest {
+public class ContactDto extends ContactCreateDto {
     @NotEmpty(message = "ID cannot be empty")
     private Long id;
 }
