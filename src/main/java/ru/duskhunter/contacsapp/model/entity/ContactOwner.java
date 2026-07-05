@@ -11,12 +11,15 @@ import ru.duskhunter.contacsapp.model.Role;
 import java.time.LocalDate;
 
 @Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
 @Builder
 @Table(name = "contact_owners")
 public class ContactOwner {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @NotBlank(message = "Username cannot be empty")
@@ -46,8 +49,8 @@ public class ContactOwner {
         .{8,} — минимальная длина пароля (8 символов);
      */
     @Setter
-    @Pattern(regexp = "(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[\"!@#$%^&*_-]).{50}", message = "Incorrect password")
-    @Column(name = "password", nullable = false, length = 50)
+    @Pattern(regexp = "(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[\"!@#$%^&*_-]).{8,50}", message = "Incorrect password")
+    @Column(name = "password", nullable = false, length = 60)
     @NotNull(message = "Password cannot be empty")
     private String password;
 

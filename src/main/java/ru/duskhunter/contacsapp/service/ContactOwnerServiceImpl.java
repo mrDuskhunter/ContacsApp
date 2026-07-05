@@ -18,7 +18,6 @@ import java.sql.SQLDataException;
 import java.util.List;
 import java.util.Optional;
 
-
 @Service
 @RequiredArgsConstructor
 public class ContactOwnerServiceImpl implements ContactOwnerService {
@@ -59,6 +58,11 @@ public class ContactOwnerServiceImpl implements ContactOwnerService {
                     List.of("User with this email already exist"));
         }
 
+        if (ownerRepo.findByTelephone(owner.getTelephone()).isPresent()) {
+            return ServerResponseHelper.response(false, mapper.map(owner, ContactOwnerDto.class), HttpStatus.CONFLICT,
+                    List.of("User with this telephone already exist"));
+        }
+
         try {
             ContactOwner savedOwner = ownerRepo.saveAndFlush(owner);
             return ServerResponseHelper.response(true, mapper.map(savedOwner, ContactOwnerDto.class), HttpStatus.CREATED, List.of());
@@ -95,24 +99,34 @@ public class ContactOwnerServiceImpl implements ContactOwnerService {
     public ServerResponse<ContactOwnerDto> updateOwner(ContactOwnerDto contactOwnerDto) {
         Long id = contactOwnerDto.getId();
 
-        if (!matchId(id)) {
+        if (!ownerRepo.existsById(id)) {
             return ServerResponseHelper.response(false, contactOwnerDto, HttpStatus.NO_CONTENT,
                     getErrorOwnerIdNotExist(id));
         }
 
-        //equals email
-        if (!ownerRepo.findEmailById(id).equals(contactOwnerDto.getEmail())) {
-            return ServerResponseHelper.response(false, contactOwnerDto, HttpStatus.CONFLICT,
-                    List.of("These users have different emails"));
-        }
-
         ContactOwner contactOwner = mapper.map(contactOwnerDto, ContactOwner.class);
-
         List<String> entityErrors = validator.validate(contactOwner);
 
         if (!entityErrors.isEmpty()) {
             return ServerResponseHelper.response(false, mapper.map(contactOwner, ContactOwnerDto.class), HttpStatus.BAD_REQUEST,
                     entityErrors);
+        }
+
+        String existingEmail = ownerRepo.findEmailById(id).orElse(null);
+
+        //equals email
+        if (existingEmail != null && !existingEmail.equals(contactOwnerDto.getEmail())) {
+            return ServerResponseHelper.response(false, contactOwnerDto, HttpStatus.CONFLICT,
+                    List.of("It is forbidden to change the email address. Contact the administrator"));
+        }
+
+        String existingTelephone = ownerRepo.findTelephoneById(id).orElse(null);
+
+        if (existingTelephone != null && !existingTelephone.equals(contactOwnerDto.getTelephone())) {
+            if (ownerRepo.findByTelephone(contactOwnerDto.getTelephone()).isPresent()) {
+                return ServerResponseHelper.response(false, contactOwnerDto, HttpStatus.CONFLICT,
+                        List.of("User with this telephone already exist"));
+            }
         }
 
         try {
@@ -122,10 +136,6 @@ public class ContactOwnerServiceImpl implements ContactOwnerService {
             return ServerResponseHelper.response(false, mapper.map(contactOwner, ContactOwnerDto.class), HttpStatus.CONFLICT,
                     List.of("Error update owner"));
         }
-    }
-
-    private boolean matchId(long contactId) {
-        return ownerRepo.findAll().stream().mapToLong(ContactOwner::getId).anyMatch(id -> id == contactId);
     }
 
     private List<String> getErrorOwnerIdNotExist(long ownerId) {

@@ -51,7 +51,7 @@ import static org.mockito.Mockito.*;
         2.1.5 result.contact id == 0
         2.1.6 result.contact firstName == Name0
         2.1.7 result.contact lastName == lastName0
-        2.1.8 result.contact telephone == +7 (234) 567 89 20
+        2.1.8 result.contact telephone == +7 234 567 89 20
         2.1.9 result.contact email == email0@mail.ru
         2.1.10 contacts.findById -> one called
     2.2 no contact with this id -> httpStatus 204
@@ -70,7 +70,7 @@ import static org.mockito.Mockito.*;
         3.1.4 result.contact id == 0
         3.1.5 result.contact firstName == Name0
         3.1.6 result.contact lastName == lastName0
-        3.1.7 result.contact telephone == +7 (123) 456-78-90
+        3.1.7 result.contact telephone == +7 123 456-78-90
         3.1.8 result.contact email == email0@mail.ru
         3.1.9 contacts.saveAndFlush -> one called
     3.2 create
@@ -80,12 +80,12 @@ import static org.mockito.Mockito.*;
         3.2.4 result.contact id == 10
         3.2.5 result.contact firstName == Name0
         3.2.6 result.contact lastName == lastName0
-        3.2.7 result.contact telephone == +7 (123) 456-78-90
+        3.2.7 result.contact telephone == +7 123 456-78-90
         3.2.8 result.contact email == email0@mail.ru
         3.2.9 contacts.saveAndFlush -> one called
-        3.3.7 validator.validate -> one called
-        3.3.8 contacts.findByEmail -> one called
-        3.3.8 contacts.findByEmail -> one called
+        3.2.10 validator.validate -> one called
+        3.2.11 contacts.findByEmail -> one called
+        3.2.12 contacts.findByTelephone -> one called
     3.3 create when Error creating contact
         3.3.1 boolean success == false
         3.3.2 HttpStatus httpStatus == HttpStatus.CONFLICT
@@ -95,7 +95,7 @@ import static org.mockito.Mockito.*;
         3.3.6 contacts.saveAndFlush -> one called
         3.3.7 validator.validate -> one called
         3.3.8 contacts.findByEmail -> one called
-        3.3.8 contacts.findByTelephone -> one called
+        3.3.9 contacts.findByTelephone -> one called
     3.4 create When email Already Exist
         3.4.1 boolean success == false
         3.4.2 HttpStatus httpStatus == HttpStatus.CONFLICT
@@ -169,7 +169,7 @@ import static org.mockito.Mockito.*;
         5.3.2 HttpStatus httpStatus == HttpStatus.CONFLICT
         5.3.3 List<String> errorMessages -> size == 1
         5.3.4 errorMessages -> "Contact with this telephone: {telephone} - already exists"
-        5.3.5 result equals ownerDto
+        5.3.5 result equals contactDto
         5.3.6 contacts.validate -> one called
         5.3.7 contacts.findEmailById -> one called
         5.3.8 contacts.findByEmail -> one called
@@ -501,8 +501,8 @@ class ContactServiceImplTest {
         ServerResponse<ContactDto> response = contactService.createContact(dto);
 
         verify(contacts, times(1)).findByEmail(any(String.class));
-        verify(contacts, times(0)).findByTelephone(any(String.class));
-        verify(contacts, times(0)).saveAndFlush(any(Contact.class));
+        verify(contacts, never()).findByTelephone(any(String.class));
+        verify(contacts, never()).saveAndFlush(any(Contact.class));
 
         assertFalse(response.isSuccess());
         assertEquals(HttpStatus.CONFLICT, response.getHttpStatus());
@@ -540,7 +540,7 @@ class ContactServiceImplTest {
 
         verify(contacts, times(1)).findByEmail(any(String.class));
         verify(contacts, times(1)).findByTelephone(any(String.class));
-        verify(contacts, times(0)).saveAndFlush(any(Contact.class));
+        verify(contacts, never()).saveAndFlush(any(Contact.class));
 
         assertFalse(response.isSuccess());
         assertEquals(HttpStatus.CONFLICT, response.getHttpStatus());
@@ -627,7 +627,7 @@ class ContactServiceImplTest {
         assertNull(response.getResult());
 
         verify(contacts, times(1)).findById(anyLong());
-        verify(contacts, times(0)).deleteById(anyLong());
+        verify(contacts, never()).deleteById(anyLong());
     }
 
     @Test
@@ -692,7 +692,7 @@ class ContactServiceImplTest {
         verify(contacts, times(1)).findEmailById(anyLong());
         verify(contacts, times(1)).findByEmail(any(String.class));
         verify(contacts, times(1)).findTelephoneById(anyLong());
-        verify(contacts, times(0)).saveAndFlush(any(Contact.class));
+        verify(contacts, never()).saveAndFlush(any(Contact.class));
 
         assertFalse(response.isSuccess());
         assertEquals(HttpStatus.CONFLICT, response.getHttpStatus());
@@ -730,7 +730,7 @@ class ContactServiceImplTest {
         verify(contacts, times(1)).findEmailById(anyLong());
         verify(contacts, times(1)).findTelephoneById(anyLong());
         verify(contacts, times(1)).findByTelephone(any(String.class));
-        verify(contacts, times(0)).saveAndFlush(any(Contact.class));
+        verify(contacts, never()).saveAndFlush(any(Contact.class));
 
         assertFalse(response.isSuccess());
         assertEquals(HttpStatus.CONFLICT, response.getHttpStatus());
@@ -808,7 +808,7 @@ class ContactServiceImplTest {
         verify(contacts, times(1)).findEmailById(anyLong());
         verify(contacts, times(1)).findTelephoneById(anyLong());
         verify(contacts, times(1)).findByEmail(any(String.class));
-        verify(contacts, times(0)).findByTelephone(any(String.class));
+        verify(contacts, never()).findByTelephone(any(String.class));
         verify(contacts, times(1)).saveAndFlush(any(Contact.class));
     }
 
@@ -847,7 +847,7 @@ class ContactServiceImplTest {
         verify(contacts, times(1)).existsById(dto.getId());
         verify(contacts, times(1)).findEmailById(anyLong());
         verify(contacts, times(1)).findTelephoneById(anyLong());
-        verify(contacts, times(0)).findByEmail(any(String.class));
+        verify(contacts, never()).findByEmail(any(String.class));
         verify(contacts, times(1)).findByTelephone(any(String.class));
         verify(contacts, times(1)).saveAndFlush(any(Contact.class));
     }
@@ -882,11 +882,11 @@ class ContactServiceImplTest {
         assertEquals(dto, response.getResult());
 
         verify(contacts, times(1)).existsById(dto.getId());
-        verify(contacts, times(0)).findEmailById(anyLong());
-        verify(contacts, times(0)).findTelephoneById(anyLong());
-        verify(contacts, times(0)).findByEmail(any(String.class));
-        verify(contacts, times(0)).findByTelephone(any(String.class));
-        verify(contacts, times(0)).saveAndFlush(any(Contact.class));
+        verify(contacts, never()).findEmailById(anyLong());
+        verify(contacts, never()).findTelephoneById(anyLong());
+        verify(contacts, never()).findByEmail(any(String.class));
+        verify(contacts, never()).findByTelephone(any(String.class));
+        verify(contacts, never()).saveAndFlush(any(Contact.class));
     }
 
     private List<Contact> initContacts() {

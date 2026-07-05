@@ -8,6 +8,8 @@ import java.util.Optional;
 
 @Repository
 public interface ContactOwnerRepo extends JpaRepository<ContactOwner,Long> {
-    String findEmailById(Long ownerId);
+    Optional<String> findEmailById(Long ownerId);
+    Optional<String> findTelephoneById(Long ownerId);
     Optional<ContactOwner> findByEmail(String email);
+    Optional<ContactOwner> findByTelephone(String email);
 }
