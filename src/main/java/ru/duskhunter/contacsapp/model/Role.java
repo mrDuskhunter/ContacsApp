@@ -1,6 +1,6 @@
 package ru.duskhunter.contacsapp.model;
 
 public enum Role {
-    User,
-    Admin;
+    ROLE_USER,
+    ROLE_ADMIN;
 }

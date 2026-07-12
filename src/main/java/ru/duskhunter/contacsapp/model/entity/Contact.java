@@ -6,9 +6,10 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import lombok.experimental.SuperBuilder;
+import ru.duskhunter.contacsapp.common.util.EmailNormalizer;
+import ru.duskhunter.contacsapp.common.util.PhoneNormalizer;
 
-import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 
 @Getter
@@ -16,8 +17,9 @@ import java.util.Objects;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
+@SuperBuilder
 @Table(name = "contacts")
-public class Contact {
+public class Contact extends BaseEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id")
@@ -25,26 +27,27 @@ public class Contact {
 
     @Setter
     @Column(name = "first_name", nullable = false, length = 100)
-    @NotEmpty(message = "First name cannot be empty")
-    @Size(min = 2, max = 50, message = "First name min size: 2, max size: 50")
+    @NotBlank(message = "First name cannot be empty")
+    @Size(max = 50, message = "First name max size: 50")
     private String firstName;
 
     @Setter
     @Column(name = "last_name", nullable = false, length = 100)
-    @NotEmpty(message = "Last name cannot be empty")
-    @Size(min = 2, max = 50, message = "Last name min size: 2, max size: 50")
+    @NotBlank(message = "Last name cannot be empty")
+    @Size(max = 50, message = "Last name max size: 50")
     private String lastName;
 
     @Setter
-    @Column(name = "telephone", nullable = false, length = 12)
-    @NotEmpty(message = "telephone cannot be empty")
-    @Pattern(regexp = "\\+7[( ]?\\d{3}[) -]?\\d{3}[- ]?\\d{2}[- ]?\\d{2}", message = "incorrect tel.number")
+    @Column(name = "telephone", nullable = false, unique = true, length = 12)
+    @NotEmpty(message = "Telephone cannot be empty")
+//    @Pattern(regexp = "\\+7[( ]?\\d{3}[) -]?\\d{3}[- ]?\\d{2}[- ]?\\d{2}", message = "Incorrect tel.number")
+    @Pattern(regexp = "\\+7\\d{10}", message = "Incorrect tel.number")
     private String telephone;
 
+    @Setter
     @Column(name = "email", nullable = false, unique = true, length = 50)
-    @NotBlank(message = "Email cannot be empty")
-    @Email(message = "incorrect email")
-    @Size(min = 2, max = 50, message = "email max size: 50")
+    @NotNull(message = "Email cannot be empty")
+    @Pattern(regexp = "^(?=.{1,50}$)[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,50}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,50}[a-zA-Z0-9])?)$", message = "Incorrect email")
     private String email;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -52,19 +55,11 @@ public class Contact {
     @NotNull(message = "Owner cannot be null")
     private ContactOwner owner;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
-    LocalDateTime createdAt;
-
     @PrePersist
-    void onCreate() {
-        this.createdAt = LocalDateTime.now().truncatedTo(ChronoUnit.MILLIS);
-    }
-
-    public Contact(String firstName, String lastName, String telephone, String email) {
-        this.firstName = firstName;
-        this.lastName = lastName;
-        this.telephone = telephone;
-        this.email = email;
+    @PreUpdate
+    private void normalizeFields() {
+        telephone = PhoneNormalizer.normalize(telephone);
+        email = EmailNormalizer.normalize(email);
     }
 
     @Override
