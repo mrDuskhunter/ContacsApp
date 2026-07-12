@@ -1,20 +1,27 @@
 package ru.duskhunter.contacsapp.service;
 
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import ru.duskhunter.contacsapp.common.util.EmailNormalizer;
+import ru.duskhunter.contacsapp.common.util.PhoneNormalizer;
 import ru.duskhunter.contacsapp.common.util.ServerResponseHelper;
 import ru.duskhunter.contacsapp.common.util.Validator;
 import ru.duskhunter.contacsapp.dto.ServerResponse;
 import ru.duskhunter.contacsapp.dto.contactowner.ContactCreateOwnerDto;
 import ru.duskhunter.contacsapp.dto.contactowner.ContactOwnerDto;
+import ru.duskhunter.contacsapp.exception.EntityConflictException;
+import ru.duskhunter.contacsapp.exception.InternalServerException;
+import ru.duskhunter.contacsapp.exception.NotFoundException;
+import ru.duskhunter.contacsapp.exception.ValidationException;
 import ru.duskhunter.contacsapp.model.entity.ContactOwner;
 import ru.duskhunter.contacsapp.model.repository.ContactOwnerRepo;
 
-import java.sql.SQLDataException;
 import java.util.List;
 import java.util.Optional;
 
@@ -35,110 +42,122 @@ public class ContactOwnerServiceImpl implements ContactOwnerService {
     }
 
     @Override
-    public ResponseEntity<ServerResponse<ContactOwnerDto>> getOwnerById(long ownerId) {
+    public ServerResponse<ContactOwnerDto> getOwnerById(long ownerId) {
         Optional<ContactOwner> contactOwnerOptional = ownerRepo.findById(ownerId);
 
-        return contactOwnerOptional.map(contact -> ServerResponseHelper.responseEntity(true, mapper.map(contact, ContactOwnerDto.class), HttpStatus.OK, List.of()))
-                .orElseGet(() -> ServerResponseHelper.responseEntity(false, null,
-                        HttpStatus.NO_CONTENT, getErrorOwnerIdNotExist(ownerId)));
+        return contactOwnerOptional.map(contact -> ServerResponseHelper.response(true, mapper.map(contact, ContactOwnerDto.class), HttpStatus.OK, List.of()))
+                .orElseThrow(() -> new NotFoundException(String.format("The owner with id %d does not exist", ownerId), null));
     }
 
+    @Transactional
     @Override
     public ServerResponse<ContactOwnerDto> createOwner(ContactCreateOwnerDto contactCreateOwnerDto) {
         ContactOwner owner = mapper.map(contactCreateOwnerDto, ContactOwner.class);
+        owner.setTelephone(PhoneNormalizer.normalize(owner.getTelephone()));
+        owner.setEmail(EmailNormalizer.normalize(owner.getEmail()));
+
         List<String> entityErrors = validator.validate(owner);
 
         if (!entityErrors.isEmpty()) {
-            return ServerResponseHelper.response(false, mapper.map(owner, ContactOwnerDto.class), HttpStatus.BAD_REQUEST,
-                    entityErrors);
+            throw new ValidationException(entityErrors, mapper.map(owner, ContactOwnerDto.class));
         }
 
-        if (ownerRepo.findByEmail(owner.getEmail()).isPresent()) {
-            return ServerResponseHelper.response(false, mapper.map(owner, ContactOwnerDto.class), HttpStatus.CONFLICT,
-                    List.of("User with this email already exist"));
-        }
+        assertNotTaken(
+                ownerRepo.findByEmail(owner.getEmail()).isPresent(),
+                "User with this email already exist",
+                owner
+        );
 
-        if (ownerRepo.findByTelephone(owner.getTelephone()).isPresent()) {
-            return ServerResponseHelper.response(false, mapper.map(owner, ContactOwnerDto.class), HttpStatus.CONFLICT,
-                    List.of("User with this telephone already exist"));
-        }
+        assertNotTaken(
+                ownerRepo.findByTelephone(owner.getTelephone()).isPresent(),
+                "User with this telephone already exist",
+                owner
+        );
 
         try {
             ContactOwner savedOwner = ownerRepo.saveAndFlush(owner);
             return ServerResponseHelper.response(true, mapper.map(savedOwner, ContactOwnerDto.class), HttpStatus.CREATED, List.of());
         } catch (DataIntegrityViolationException e) {
-            return ServerResponseHelper.response(false, mapper.map(owner, ContactOwnerDto.class), HttpStatus.CONFLICT,
-                    List.of("Error creating owner"));
+            throw new EntityConflictException("Error creating owner", mapper.map(owner, ContactOwnerDto.class));
         }
     }
 
+    @Transactional
     @Override
     public ServerResponse<ContactOwnerDto> deleteOwnerById(long ownerId) {
-        Optional<ContactOwner> contactOptional = ownerRepo.findById(ownerId);
-        if (contactOptional.isEmpty()) {
-            return ServerResponseHelper.response(false, null, HttpStatus.NO_CONTENT,
-                    getErrorOwnerIdNotExist(ownerId));
+        ContactOwner contact = ownerRepo.findById(ownerId)
+                .orElseThrow(() ->
+                        new NotFoundException(getMessageForErrorOwnerIdNotExist(ownerId),
+                                null));
+
+        ContactOwnerDto contactOwnerDto = mapper.map(contact, ContactOwnerDto.class);
+
+        ownerRepo.deleteById(ownerId);
+        if (ownerRepo.findById(ownerId).isPresent()) {
+            throw new InternalServerException(
+                    String.format("Unexpected server error during deletion operation the owner with id %s", ownerId),
+                    contactOwnerDto);
         }
 
-        ContactOwnerDto contactOwnerDto = mapper.map(contactOptional.get(), ContactOwnerDto.class);
-
-        try {
-            ownerRepo.deleteById(ownerId);
-            Optional<ContactOwner> contactOptionalTest = ownerRepo.findById(ownerId);
-            if (contactOptionalTest.isPresent()) {
-                throw new SQLDataException();
-            }
-        } catch (Exception e) {
-            return ServerResponseHelper.response(false, contactOwnerDto, HttpStatus.INTERNAL_SERVER_ERROR,
-                    List.of(String.format("Unexpected server error during deletion operation the owner with id %s", ownerId)));
-        }
         return ServerResponseHelper.response(true, contactOwnerDto, HttpStatus.OK, List.of());
     }
 
+    @Transactional
     @Override
     public ServerResponse<ContactOwnerDto> updateOwner(ContactOwnerDto contactOwnerDto) {
         Long id = contactOwnerDto.getId();
 
         if (!ownerRepo.existsById(id)) {
-            return ServerResponseHelper.response(false, contactOwnerDto, HttpStatus.NO_CONTENT,
-                    getErrorOwnerIdNotExist(id));
+            throw new NotFoundException(getMessageForErrorOwnerIdNotExist(id), contactOwnerDto);
         }
 
         ContactOwner contactOwner = mapper.map(contactOwnerDto, ContactOwner.class);
+        contactOwner.setTelephone(PhoneNormalizer.normalize(contactOwner.getTelephone()));
+        contactOwner.setEmail(EmailNormalizer.normalize(contactOwner.getEmail()));
+
         List<String> entityErrors = validator.validate(contactOwner);
 
         if (!entityErrors.isEmpty()) {
-            return ServerResponseHelper.response(false, mapper.map(contactOwner, ContactOwnerDto.class), HttpStatus.BAD_REQUEST,
-                    entityErrors);
+            throw new ValidationException(entityErrors, contactOwner);
         }
 
         String existingEmail = ownerRepo.findEmailById(id).orElse(null);
 
         //equals email
-        if (existingEmail != null && !existingEmail.equals(contactOwnerDto.getEmail())) {
-            return ServerResponseHelper.response(false, contactOwnerDto, HttpStatus.CONFLICT,
-                    List.of("It is forbidden to change the email address. Contact the administrator"));
+        if (existingEmail != null && !existingEmail.equals(contactOwner.getEmail())) {
+            throw new EntityConflictException(
+                    "It is forbidden to change the email address. Contact the administrator",
+                    contactOwnerDto);
         }
 
         String existingTelephone = ownerRepo.findTelephoneById(id).orElse(null);
 
-        if (existingTelephone != null && !existingTelephone.equals(contactOwnerDto.getTelephone())) {
-            if (ownerRepo.findByTelephone(contactOwnerDto.getTelephone()).isPresent()) {
-                return ServerResponseHelper.response(false, contactOwnerDto, HttpStatus.CONFLICT,
-                        List.of("User with this telephone already exist"));
-            }
+        if (existingTelephone != null && !existingTelephone.equals(contactOwner.getTelephone())) {
+            assertNotTaken(
+                    ownerRepo.findByTelephone(contactOwner.getTelephone()).isPresent(),
+                    "User with this telephone already exist",
+                    contactOwner
+            );
         }
 
         try {
             ContactOwner savedContactOwner = ownerRepo.saveAndFlush(contactOwner);
             return ServerResponseHelper.response(true, mapper.map(savedContactOwner, ContactOwnerDto.class), HttpStatus.OK, List.of());
         } catch (DataIntegrityViolationException e) {
-            return ServerResponseHelper.response(false, mapper.map(contactOwner, ContactOwnerDto.class), HttpStatus.CONFLICT,
-                    List.of("Error update owner"));
+            throw new EntityConflictException("Error update owner", mapper.map(contactOwner, ContactOwnerDto.class));
+        } catch (ConstraintViolationException cve) {
+            List<String> errors = cve.getConstraintViolations().stream().map(ConstraintViolation::getMessage).toList();
+            throw new ValidationException(errors, mapper.map(contactOwner, ContactOwnerDto.class));
         }
     }
 
-    private List<String> getErrorOwnerIdNotExist(long ownerId) {
-        return List.of(String.format("The owner with id %d does not exist", ownerId));
+    private void assertNotTaken(boolean alreadyExists, String message, ContactOwner owner) {
+        if (alreadyExists) {
+            throw new EntityConflictException(message, mapper.map(owner, ContactOwnerDto.class));
+        }
+    }
+
+    private String getMessageForErrorOwnerIdNotExist(long ownerId) {
+        return String.format("The owner with id %d does not exist", ownerId);
     }
 }

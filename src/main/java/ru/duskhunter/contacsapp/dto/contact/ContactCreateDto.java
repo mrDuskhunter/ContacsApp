@@ -2,6 +2,8 @@ package ru.duskhunter.contacsapp.dto.contact;
 
 import jakarta.validation.constraints.*;
 import lombok.*;
+import ru.duskhunter.contacsapp.common.util.EmailNormalizer;
+import ru.duskhunter.contacsapp.common.util.PhoneNormalizer;
 import ru.duskhunter.contacsapp.model.entity.ContactOwner;
 
 import java.util.Objects;
@@ -35,7 +37,7 @@ public class ContactCreateDto {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         ContactCreateDto that = (ContactCreateDto) o;
-        return Objects.equals(firstName, that.firstName) && Objects.equals(lastName, that.lastName) && Objects.equals(telephone, that.telephone) && Objects.equals(email, that.email);
+        return Objects.equals(firstName, that.firstName) && Objects.equals(lastName, that.lastName) && Objects.equals(PhoneNormalizer.normalize(telephone), PhoneNormalizer.normalize(that.telephone)) && Objects.equals(EmailNormalizer.normalize(email), EmailNormalizer.normalize(that.email));
     }
 
     @Override
