@@ -76,11 +76,13 @@ class ContactRepoTest {
         1.3.NegativeCase telephone.
             1.3.1. telephone null -> "telephone cannot be empty"
             1.3.2. telephone format invalid -> "incorrect tel.number"
-            1.3.3. telephone duplicate -> unique constraint violation
+            1.3.3. telephone duplicate WITHIN SAME OWNER -> unique constraint violation
+            1.3.4. telephone duplicate ACROSS DIFFERENT OWNERS -> allowed
         1.4.NegativeCase email.
             1.4.1. email null -> "Email cannot be empty"
             1.4.2. email format invalid -> "incorrect email"
-            1.4.3. email duplicate -> unique constraint violation
+            1.4.3. email duplicate WITHIN SAME OWNER -> unique constraint violation
+            1.4.4. email duplicate ACROSS DIFFERENT OWNERS -> allowed
         1.5.NegativeCase owner.
             1.5.1. owner null -> "Owner cannot be null"
         1.6.PositiveCase. id and created_at is not null
@@ -94,12 +96,17 @@ class ContactRepoTest {
     3.findTelephoneById
         3.1 if id exist return telephone
         3.2 if id not exist return empty Optional
-    4.findByEmail
-        4.1 if email exist return contact
-        4.2 if email not exist return empty Optional
-    5.findByTelephone
-        5.1 if telephone exist return contact
-        5.2 if telephone not exist return empty Optional
+    4.findByOwnerIdAndEmail
+        4.1 if ownerId+email exist return contact
+        4.2 if ownerId+email not exist return empty Optional
+        4.3 same email under a different owner returns empty Optional
+    5.findByOwnerIdAndTelephone
+        5.1 if ownerId+telephone exist return contact
+        5.2 if ownerId+telephone not exist return empty Optional
+        5.3 same telephone under a different owner returns empty Optional
+    6.findAllByOwnerId
+        6.1 if ownerId exist return list of contacts -> check contacts which have another contact owner
+        6.2 if ownerId not exist return empty list
     */
 
     @Test
@@ -278,9 +285,9 @@ class ContactRepoTest {
     }
 
     @Test
-    void testSaveContactWithDuplicateTelephone() {
+    void testSaveContactWithDuplicateTelephone_SameOwner_ThrowsConflict() {
         /*
-        1.3.3. telephone duplicate -> unique constraint violation
+        1.3.3. telephone duplicate WITHIN SAME OWNER -> unique constraint violation
          */
 
         ContactOwner owner = createContactOwner("testUser");
@@ -318,6 +325,45 @@ class ContactRepoTest {
         TestTransaction.flagForRollback();
         TestTransaction.end();
         TestTransaction.start();
+    }
+
+    @Test
+    void testSaveContactWithDuplicateTelephone_DifferentOwners_Allowed() {
+        /*
+        1.3.4. telephone duplicate ACROSS DIFFERENT OWNERS -> allowed
+        (uniqueness is scoped to owner_id + telephone, not global)
+         */
+
+        ContactOwner owner1 = createContactOwner("testUser1");
+        ContactOwner owner2 = createContactOwner("testUser2");
+
+        Contact contact1 = Contact.builder()
+                .firstName("TestFirstName1")
+                .lastName("TestLastName1")
+                .telephone("+79001112233")
+                .email("test1@example.com")
+                .owner(owner1)
+                .build();
+
+        Contact contact2 = Contact.builder()
+                .firstName("TestFirstName2")
+                .lastName("TestLastName2")
+                .telephone("+79001112233")
+                .email("test2@example.com")
+                .owner(owner2)
+                .build();
+
+        contactRepo.save(contact1);
+        entityManager.flush();
+
+        Contact savedContact2 = contactRepo.save(contact2);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertNotNull(savedContact2.getId());
+
+        List<Contact> allContacts = contactRepo.findAll();
+        assertEquals(2, allContacts.size());
     }
 
     @ParameterizedTest
@@ -365,9 +411,9 @@ class ContactRepoTest {
     }
 
     @Test
-    void testSaveContactWithDuplicateEmail() {
+    void testSaveContactWithDuplicateEmail_SameOwner_ThrowsConflict() {
         /*
-        1.4.3. email duplicate -> unique constraint violation
+        1.4.3. email duplicate WITHIN SAME OWNER -> unique constraint violation
          */
 
         ContactOwner owner = createContactOwner("testUser");
@@ -402,6 +448,45 @@ class ContactRepoTest {
         TestTransaction.flagForRollback();
         TestTransaction.end();
         TestTransaction.start();
+    }
+
+    @Test
+    void testSaveContactWithDuplicateEmail_DifferentOwners_Allowed() {
+        /*
+        1.4.4. email duplicate ACROSS DIFFERENT OWNERS -> allowed
+        (uniqueness is scoped to owner_id + email, not global)
+         */
+
+        ContactOwner owner1 = createContactOwner("testUser1");
+        ContactOwner owner2 = createContactOwner("testUser2");
+
+        Contact contact1 = Contact.builder()
+                .firstName("TestFirstName1")
+                .lastName("TestLastName1")
+                .telephone("+79001112233")
+                .email("shared@example.com")
+                .owner(owner1)
+                .build();
+
+        Contact contact2 = Contact.builder()
+                .firstName("TestFirstName2")
+                .lastName("TestLastName2")
+                .telephone("+79001112299")
+                .email("shared@example.com")
+                .owner(owner2)
+                .build();
+
+        contactRepo.save(contact1);
+        entityManager.flush();
+
+        Contact savedContact2 = contactRepo.save(contact2);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertNotNull(savedContact2.getId());
+
+        List<Contact> allContacts = contactRepo.findAll();
+        assertEquals(2, allContacts.size());
     }
 
     @Test
@@ -475,6 +560,7 @@ class ContactRepoTest {
         3.1 if id exist return telephone
          */
 
+        String telephone = "+79001112233";
         ContactOwner owner = createContactOwner("testUser");
 
         Contact contact = Contact.builder()
@@ -499,15 +585,26 @@ class ContactRepoTest {
         3.2 if id not exist return empty Optional
          */
 
+        String telephone = "+79001112233";
+        ContactOwner owner = createContactOwner("testUser");
+
+        contactRepo.save(Contact.builder()
+                .firstName("TestFirstName")
+                .lastName("TestLastName")
+                .telephone(telephone)
+                .email("test@example.com")
+                .owner(owner)
+                .build());
+
         Optional<String> telephoneOptional = contactRepo.findTelephoneById(999999L);
 
         assertFalse(telephoneOptional.isPresent());
     }
 
     @Test
-    void testFindByEmail_WithExistingEmail() {
+    void testFindByOwnerIdAndEmail_WithExistingEmail() {
         /*
-        4.1 if email exist return contact
+        4.1 if ownerId+email exist return contact
          */
 
         ContactOwner owner = createContactOwner("testUser");
@@ -522,9 +619,10 @@ class ContactRepoTest {
 
         Contact savedContact = contactRepo.save(contact);
 
-        Optional<Contact> foundContact = contactRepo.findByEmail("test@example.com");
+        Optional<Contact> foundContact = contactRepo.findByOwnerIdAndEmail(owner.getId(), "test@example.com");
 
         assertTrue(foundContact.isPresent());
+        assertEquals(owner.getId(), savedContact.getOwner().getId());
         assertEquals(savedContact.getId(), foundContact.get().getId());
         assertEquals(savedContact.getFirstName(), foundContact.get().getFirstName());
         assertEquals(savedContact.getLastName(), foundContact.get().getLastName());
@@ -532,20 +630,46 @@ class ContactRepoTest {
     }
 
     @Test
-    void testFindByEmail_WithNonExistingEmail() {
+    void testFindByOwnerIdAndEmail_WithNonExistingEmail() {
         /*
-        4.2 if email not exist return empty Optional
+        4.2 if ownerId+email not exist return empty Optional
          */
 
-        Optional<Contact> foundContact = contactRepo.findByEmail("nonexistent@example.com");
+        ContactOwner owner = createContactOwner("testUser");
+
+        Optional<Contact> foundContact = contactRepo.findByOwnerIdAndEmail(owner.getId(), "nonexistent@example.com");
 
         assertFalse(foundContact.isPresent());
     }
 
     @Test
-    void testFindByTelephone_WithExistingTelephone() {
+    void testFindByOwnerIdAndEmail_SameEmailUnderDifferentOwner_ReturnsEmpty() {
         /*
-        5.1 if telephone exist return contact
+        4.3 same email under a different owner returns empty Optional
+         */
+
+        ContactOwner owner1 = createContactOwner("testUser1");
+        ContactOwner owner2 = createContactOwner("testUser2");
+
+        Contact contact = Contact.builder()
+                .firstName("TestFirstName")
+                .lastName("TestLastName")
+                .telephone("+79001112233")
+                .email("shared@example.com")
+                .owner(owner1)
+                .build();
+
+        contactRepo.save(contact);
+
+        Optional<Contact> foundUnderOwner2 = contactRepo.findByOwnerIdAndEmail(owner2.getId(), "shared@example.com");
+
+        assertFalse(foundUnderOwner2.isPresent());
+    }
+
+    @Test
+    void testFindByOwnerIdAndTelephone_WithExistingTelephone() {
+        /*
+        5.1 if ownerId+telephone exist return contact
          */
 
         ContactOwner owner = createContactOwner("testUser");
@@ -560,7 +684,7 @@ class ContactRepoTest {
 
         Contact savedContact = contactRepo.save(contact);
 
-        Optional<Contact> foundContact = contactRepo.findByTelephone("+79001112233");
+        Optional<Contact> foundContact = contactRepo.findByOwnerIdAndTelephone(owner.getId(), "+79001112233");
 
         assertTrue(foundContact.isPresent());
         assertEquals(savedContact.getId(), foundContact.get().getId());
@@ -570,14 +694,134 @@ class ContactRepoTest {
     }
 
     @Test
-    void testFindByTelephone_WithNonExistingTelephone() {
+    void testFindByOwnerIdAndTelephone_WithNonExistingTelephone() {
         /*
-        5.2 if telephone not exist return empty Optional
+        5.2 if ownerId+telephone not exist return empty Optional
          */
 
-        Optional<Contact> foundContact = contactRepo.findByTelephone("+79000000000");
+        ContactOwner owner = createContactOwner("testUser");
+
+        Optional<Contact> foundContact = contactRepo.findByOwnerIdAndTelephone(owner.getId(), "+79000000000");
 
         assertFalse(foundContact.isPresent());
+    }
+
+    @Test
+    void testFindByOwnerIdAndTelephone_SameTelephoneUnderDifferentOwner_ReturnsEmpty() {
+        /*
+        5.3 same telephone under a different owner returns empty Optional
+         */
+
+        ContactOwner owner1 = createContactOwner("testUser1");
+        ContactOwner owner2 = createContactOwner("testUser2");
+
+        Contact contact = Contact.builder()
+                .firstName("TestFirstName")
+                .lastName("TestLastName")
+                .telephone("+79001112233")
+                .email("test1@example.com")
+                .owner(owner1)
+                .build();
+
+        contactRepo.save(contact);
+
+        Optional<Contact> foundUnderOwner2 = contactRepo.findByOwnerIdAndTelephone(owner2.getId(), "+79001112233");
+
+        assertFalse(foundUnderOwner2.isPresent());
+    }
+
+    @Test
+    void testFindAllByOwnerId_ReturnListContacts() {
+        /*
+        6.1 if ownerId exist return list of contacts -> check contacts which have another contact owner
+         */
+
+        for (int i = 0; i < 5; i++) {
+            ContactOwner owner = ContactOwner.builder()
+                    .username("testUser" + i)
+                    .birthday(LocalDate.now().minusYears(20))
+                    .email("testUser" + i + "@example.com")
+                    .telephone("+7900111223" + i)
+                    .password("P@ssw0rd1234_QwErt" + "x".repeat(32))
+                    .role(Role.ROLE_USER)
+                    .build();
+
+            contactOwnerRepo.save(owner);
+        }
+
+        List<ContactOwner> owners = contactOwnerRepo.findAll();
+
+        for (ContactOwner owner : owners) {
+            for (int i = 0; i < 5; i++) {
+                Contact contact = Contact.builder()
+                        .firstName("TestFirstName" + i)
+                        .lastName("TestLastName" + i)
+                        .telephone("+7900111223" + i)
+                        .email("test" + i + "@example.com")
+                        .owner(owner)
+                        .build();
+
+                contactRepo.save(contact);
+            }
+        }
+
+        List<Contact> contacts = contactRepo.findAllByOwnerId(owners.get(0).getId());
+
+        assertFalse(contacts.isEmpty());
+        assertEquals(5, contacts.size());
+        assertTrue(contacts.stream()
+                .map(Contact::getOwner)
+                .allMatch(owner -> owner.equals(owners.get(0))));
+    }
+
+    @Test
+    void testFindAllByOwnerId_ReturnEmptyList() {
+        /*
+        6.2 if ownerId not exist return empty list
+         */
+
+        for (int i = 0; i < 5; i++) {
+            ContactOwner owner = ContactOwner.builder()
+                    .username("testUser" + i)
+                    .birthday(LocalDate.now().minusYears(20))
+                    .email("testUser" + i + "@example.com")
+                    .telephone("+7900111223" + i)
+                    .password("P@ssw0rd1234_QwErt" + "x".repeat(32))
+                    .role(Role.ROLE_USER)
+                    .build();
+
+            contactOwnerRepo.save(owner);
+        }
+
+        List<ContactOwner> owners = contactOwnerRepo.findAll();
+
+        for (ContactOwner owner : owners) {
+            for (int i = 0; i < 5; i++) {
+                Contact contact = Contact.builder()
+                        .firstName("TestFirstName" + i)
+                        .lastName("TestLastName" + i)
+                        .telephone("+7900111224" + i)
+                        .email("test" + i + "@example.com")
+                        .owner(owner)
+                        .build();
+
+                contactRepo.save(contact);
+            }
+        }
+
+        ContactOwner owner = ContactOwner.builder()
+                .username("NewTestUser")
+                .birthday(LocalDate.now().minusYears(20))
+                .email("NewtestUser@example.com")
+                .telephone("+79001112666")
+                .password("P@ssw0rd1234_QwErt" + "x".repeat(32))
+                .role(Role.ROLE_USER)
+                .build();
+
+        contactOwnerRepo.save(owner);
+
+        List<Contact> contacts = contactRepo.findAllByOwnerId(owner.getId());
+        assertTrue(contacts.isEmpty());
     }
 
     private ContactOwner createContactOwner(String username) {
@@ -585,7 +829,7 @@ class ContactRepoTest {
                 .username(username)
                 .birthday(LocalDate.now().minusYears(20))
                 .email(username + "@example.com")
-                .telephone("+79001112233")
+                .telephone("+7900" + String.format("%07d", Math.abs(username.hashCode()) % 10000000))
                 .password("P@ssw0rd1234_QwErt" + "x".repeat(32))
                 .role(Role.ROLE_USER)
                 .build();

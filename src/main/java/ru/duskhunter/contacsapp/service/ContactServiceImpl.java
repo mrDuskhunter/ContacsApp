@@ -8,6 +8,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.duskhunter.contacsapp.common.security.CurrentUserProvider;
 import ru.duskhunter.contacsapp.common.util.EmailNormalizer;
 import ru.duskhunter.contacsapp.common.util.PhoneNormalizer;
 import ru.duskhunter.contacsapp.common.util.ServerResponseHelper;
@@ -20,10 +21,10 @@ import ru.duskhunter.contacsapp.exception.InternalServerException;
 import ru.duskhunter.contacsapp.exception.NotFoundException;
 import ru.duskhunter.contacsapp.exception.ValidationException;
 import ru.duskhunter.contacsapp.model.entity.Contact;
+import ru.duskhunter.contacsapp.model.entity.ContactOwner;
 import ru.duskhunter.contacsapp.model.repository.ContactRepo;
 
 import java.util.List;
-import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -31,43 +32,36 @@ public class ContactServiceImpl implements ContactService {
     private final ContactRepo contacts;
     private final ModelMapper mapper;
     private final Validator validator;
-
-    @Override
-    public ServerResponse<List<ContactDto>> getContacts() {
-        List<ContactDto> contactDtos = contacts.findAll()
-                .stream()
-                .map(contact -> mapper.map(contact, ContactDto.class))
-                .toList();
-        return ServerResponseHelper.response(true, contactDtos, HttpStatus.OK, List.of());
-    }
+    private final CurrentUserProvider currentUserProvider;
 
     @Override
     public ServerResponse<ContactDto> getContactById(long contactId) {
-        Optional<Contact> contactOptional = contacts.findById(contactId);
-
-        return contactOptional.map(contact -> ServerResponseHelper.response(true, mapper.map(contact, ContactDto.class), HttpStatus.OK, List.of()))
-                .orElseThrow(() -> new NotFoundException(String.format("The contact with id %s does not exist", contactId), null));
+        Contact contact = findOwnedContactOrThrow(contactId, null);
+        return ServerResponseHelper.response(true, mapper.map(contact, ContactDto.class), HttpStatus.OK, List.of());
     }
 
     @Transactional
     @Override
     public ServerResponse<ContactDto> createContact(ContactCreateDto contactCreateDto) {
+        ContactOwner owner = currentUserProvider.getCurrentOwner();
+
         Contact contact = mapper.map(contactCreateDto, Contact.class);
+        contact.setOwner(owner);
         contact.setTelephone(PhoneNormalizer.normalize(contact.getTelephone()));
         contact.setEmail(EmailNormalizer.normalize(contact.getEmail()));
-        List<String> entityErrors = validator.validate(contact);
 
+        List<String> entityErrors = validator.validate(contact);
         if (!entityErrors.isEmpty()) {
             throw new ValidationException(entityErrors, mapper.map(contact, ContactDto.class));
         }
 
         assertAttributeNotTaken(
-                contacts.findByEmail(contact.getEmail()).isPresent(),
+                contacts.findByOwnerIdAndEmail(contact.getOwner().getId(), contact.getEmail()).isPresent(),
                 "email: " + contact.getEmail(), contact
         );
 
         assertAttributeNotTaken(
-                contacts.findByTelephone(contact.getTelephone()).isPresent(),
+                contacts.findByOwnerIdAndTelephone(contact.getOwner().getId(), contact.getTelephone()).isPresent(),
                 "telephone: " + contact.getTelephone(), contact
         );
 
@@ -82,11 +76,7 @@ public class ContactServiceImpl implements ContactService {
     @Transactional
     @Override
     public ServerResponse<ContactDto> deleteContactById(long contactId) {
-        Contact contact = contacts.findById(contactId)
-                .orElseThrow(() ->
-                        new NotFoundException(String.format("The contact with id %s does not exist", contactId),
-                                null));
-
+        Contact contact = findOwnedContactOrThrow(contactId, null);
         ContactDto contactDto = mapper.map(contact, ContactDto.class);
 
         contacts.deleteById(contactId);
@@ -103,35 +93,32 @@ public class ContactServiceImpl implements ContactService {
     @Override
     public ServerResponse<ContactDto> updateContact(ContactDto contactDto) {
         Long id = contactDto.getId();
-
-        if (!contacts.existsById(id)) {
-            throw new NotFoundException(String.format("The contact with id %s does not exist", id), contactDto);
-        }
+        Contact existingContact = findOwnedContactOrThrow(id,contactDto);
 
         Contact contact = mapper.map(contactDto, Contact.class);
+        contact.setOwner(existingContact.getOwner());
         contact.setTelephone(PhoneNormalizer.normalize(contact.getTelephone()));
         contact.setEmail(EmailNormalizer.normalize(contact.getEmail()));
 
         List<String> entityErrors = validator.validate(contact);
-
         if (!entityErrors.isEmpty()) {
             throw new ValidationException(entityErrors, mapper.map(contact, ContactDto.class));
         }
 
-        String existingEmail = contacts.findEmailById(id).orElse(null);
+        long ownerId = existingContact.getOwner().getId();
 
+        String existingEmail = contacts.findEmailById(id).orElse(null);
         if (existingEmail != null && !existingEmail.equals(contact.getEmail())) {
             assertAttributeNotTaken(
-                    contacts.findByEmail(contact.getEmail()).isPresent(),
+                    contacts.findByOwnerIdAndEmail(ownerId, contact.getEmail()).isPresent(),
                     "email: " + contact.getEmail(), contact
             );
         }
 
         String existingTelephone = contacts.findTelephoneById(id).orElse(null);
-
         if (existingTelephone != null && !existingTelephone.equals(contact.getTelephone())) {
             assertAttributeNotTaken(
-                    contacts.findByTelephone(contact.getTelephone()).isPresent(),
+                    contacts.findByOwnerIdAndTelephone(ownerId, contact.getTelephone()).isPresent(),
                     "telephone: " + contact.getTelephone(), contact
             );
         }
@@ -145,6 +132,32 @@ public class ContactServiceImpl implements ContactService {
             List<String> errors = cve.getConstraintViolations().stream().map(ConstraintViolation::getMessage).toList();
             throw new ValidationException(errors, mapper.map(contact, ContactDto.class));
         }
+    }
+
+    @Override
+    public ServerResponse<List<ContactDto>> getContactsForCurrentOwner() {
+        long ownerId = currentUserProvider.getCurrentOwner().getId();
+
+        List<ContactDto> contactDtos = contacts.findAllByOwnerId(ownerId)
+                .stream()
+                .map(contact -> mapper.map(contact, ContactDto.class))
+                .toList();
+
+        return ServerResponseHelper.response(true, contactDtos, HttpStatus.OK, List.of());
+    }
+
+    private Contact findOwnedContactOrThrow(long contactId, ContactDto dtoForException) {
+        long currentOwnerId = currentUserProvider.getCurrentOwner().getId();
+
+        Contact contact = contacts.findById(contactId)
+                .orElseThrow(() -> new NotFoundException(
+                        String.format("The contact with id %s does not exist", contactId),dtoForException));
+
+        if (contact.getOwner().getId() != currentOwnerId) {
+            throw new NotFoundException(
+                    String.format("The contact with id %s does not exist", contactId), dtoForException);
+        }
+        return contact;
     }
 
     private void assertAttributeNotTaken(boolean alreadyExists, String message, Contact contact) {

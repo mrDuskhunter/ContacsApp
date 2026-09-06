@@ -18,7 +18,11 @@ import java.util.Objects;
 @AllArgsConstructor
 @Entity
 @SuperBuilder
-@Table(name = "contacts")
+@Table(name = "contacts",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uq_contact_owner_telephone", columnNames = {"owner_id", "telephone"}),
+                @UniqueConstraint(name = "uq_contact_owner_email", columnNames = {"owner_id", "email"})
+        })
 public class Contact extends BaseEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -38,14 +42,14 @@ public class Contact extends BaseEntity {
     private String lastName;
 
     @Setter
-    @Column(name = "telephone", nullable = false, unique = true, length = 12)
+    @Column(name = "telephone", nullable = false, length = 12)
     @NotEmpty(message = "Telephone cannot be empty")
 //    @Pattern(regexp = "\\+7[( ]?\\d{3}[) -]?\\d{3}[- ]?\\d{2}[- ]?\\d{2}", message = "Incorrect tel.number")
     @Pattern(regexp = "\\+7\\d{10}", message = "Incorrect tel.number")
     private String telephone;
 
     @Setter
-    @Column(name = "email", nullable = false, unique = true, length = 50)
+    @Column(name = "email", nullable = false, length = 50)
     @NotNull(message = "Email cannot be empty")
     @Pattern(regexp = "^(?=.{1,50}$)[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,50}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,50}[a-zA-Z0-9])?)$", message = "Incorrect email")
     private String email;

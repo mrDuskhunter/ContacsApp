@@ -9,6 +9,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.modelmapper.ModelMapper;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import ru.duskhunter.contacsapp.common.security.CurrentUserProvider;
 import ru.duskhunter.contacsapp.common.util.PhoneNormalizer;
 import ru.duskhunter.contacsapp.common.util.Validator;
 import ru.duskhunter.contacsapp.dto.ServerResponse;
@@ -204,8 +205,6 @@ import static org.mockito.Mockito.*;
         5.7.9 contacts.findByEmail -> no called
         5.7.10 contacts.findByTelephone -> no called
         5.7.11 contacts.saveAndFlush -> no called
-
-        при валидации ConstraintViolationException
  */
 
 @ExtendWith({MockitoExtension.class})
@@ -215,6 +214,8 @@ class ContactServiceImplTest {
     private Validator validator;
     private final ModelMapper modelMapper = new ModelMapper();
     private ContactServiceImpl contactService;
+    @Mock
+    private CurrentUserProvider currentUserProvider;
 
     @BeforeEach
     void setUp() {
@@ -223,11 +224,11 @@ class ContactServiceImplTest {
                 jakarta.validation.Validation.buildDefaultValidatorFactory().getValidator();
         validator = new Validator(jakartaValidator);
 
-        contactService = new ContactServiceImpl(contacts, modelMapper, validator);
+        contactService = new ContactServiceImpl(contacts, modelMapper, validator, currentUserProvider);
     }
 
     @Test
-    void shouldGetContacts() {
+    void shouldGetContactsForCurrentOwner() {
         /*
         1.1 get list contacts
         1.1.1 boolean success == true
@@ -236,11 +237,13 @@ class ContactServiceImplTest {
         1.1.4 List<String> contacts -> size == 10 and value.equals
         1.1.5 contacts.findAll -> one called
         */
-        when(contacts.findAll()).thenReturn(initContacts());
+        ContactOwner owner = createContactOwner();
+        when(currentUserProvider.getCurrentOwner()).thenReturn(owner);
+        when(contacts.findAllByOwnerId(owner.getId())).thenReturn(initContacts());
 
-        ServerResponse<List<ContactDto>> response = contactService.getContacts();
+        ServerResponse<List<ContactDto>> response = contactService.getContactsForCurrentOwner();
 
-        verify(contacts, times(1)).findAll();
+        verify(contacts, times(1)).findAllByOwnerId(owner.getId());
 
         assertTrue(response.isSuccess());
         assertEquals(HttpStatus.OK, response.getHttpStatus());
@@ -250,20 +253,22 @@ class ContactServiceImplTest {
     }
 
     @Test
-    void shouldGetEmptyListContacts() {
+    void shouldGetEmptyListForCurrentOwner() {
         /*
-        1.2 get list contacts
+        1.2 get list contacts -> returns empty list when current owner has none
         1.2.1 boolean success == true
         1.2.2 HttpStatus httpStatus == HttpStatus.ok
         1.2.3 List<String> errorMessages -> size == 0
         1.2.4 List<String> contacts -> size == 0
         1.2.5 contacts.findAll -> one called
         */
-        when(contacts.findAll()).thenReturn(List.of());
+        ContactOwner owner = createContactOwner();
+        when(currentUserProvider.getCurrentOwner()).thenReturn(owner);
+        when(contacts.findAllByOwnerId(owner.getId())).thenReturn(List.of());
 
-        ServerResponse<List<ContactDto>> response = contactService.getContacts();
+        ServerResponse<List<ContactDto>> response = contactService.getContactsForCurrentOwner();
 
-        verify(contacts, times(1)).findAll();
+        verify(contacts, times(1)).findAllByOwnerId(owner.getId());
 
         assertTrue(response.isSuccess());
         assertEquals(HttpStatus.OK, response.getHttpStatus());
@@ -284,7 +289,9 @@ class ContactServiceImplTest {
         2.1.8 result.contact email == email0@mail.ru
         2.1.9 contacts.findById -> one called
         */
-        when(contacts.findById(anyLong())).thenReturn(Optional.of(initContacts().get(0)));
+        Contact contact = initContacts().get(0);
+        when(currentUserProvider.getCurrentOwner()).thenReturn(contact.getOwner());
+        when(contacts.findById(anyLong())).thenReturn(Optional.of(contact));
 
         ServerResponse<ContactDto> response = contactService.getContactById(0);
 
@@ -294,23 +301,25 @@ class ContactServiceImplTest {
         assertEquals(HttpStatus.OK, response.getHttpStatus());
         assertEquals(0, response.getErrorMessages().size());
 
-        ContactDto contact = response.getResult();
+        ContactDto contactDto = response.getResult();
 
-        assertEquals(0, contact.getId());
-        assertEquals("Name0", contact.getFirstName());
-        assertEquals("lastName0", contact.getLastName());
-        assertEquals("+7 234 567 89 20", contact.getTelephone());
-        assertEquals("email0@mail.ru", contact.getEmail());
+        assertEquals(0, contactDto.getId());
+        assertEquals("Name0", contactDto.getFirstName());
+        assertEquals("lastName0", contactDto.getLastName());
+        assertEquals("+7 234 567 89 20", contactDto.getTelephone());
+        assertEquals("email0@mail.ru", contactDto.getEmail());
     }
 
     @Test
     void shouldGetHttpStatus204() {
         /*
+        2.2 NotFoundException when contact does not exist
         2.2.1 NotFoundException
         2.2.2 errorMessages -> "The contact with id 13 does not exist"
         2.2.3 result is null
         2.2.4 contacts.findById -> one called
          */
+        when(currentUserProvider.getCurrentOwner()).thenReturn(createContactOwner());
         when(contacts.findById(anyLong())).thenReturn(Optional.empty());
 
         NotFoundException exception = assertThrows(NotFoundException.class, () -> {
@@ -324,9 +333,36 @@ class ContactServiceImplTest {
     }
 
     @Test
-    void shouldCreateContactWhenContactsIsEmpty() {
+    void shouldNotGetContactWhenBelongsToAnotherOwner() {
         /*
-        3.1 create
+        2.3 NotFoundException when contact belongs to a different owner
+        */
+        Contact contact = initContacts().get(0);
+        ContactOwner anotherOwner = ContactOwner.builder()
+                .id(999L)
+                .username("AnotherUser")
+                .email("another@mail.ru")
+                .password("P@ssw0rd1234")
+                .role(Role.ROLE_USER)
+                .birthday(LocalDate.now().minusYears(20))
+                .telephone("+79009998877")
+                .build();
+
+        when(currentUserProvider.getCurrentOwner()).thenReturn(anotherOwner);
+        when(contacts.findById(anyLong())).thenReturn(Optional.of(contact));
+
+        NotFoundException exception = assertThrows(NotFoundException.class, () -> {
+            contactService.getContactById(contact.getId());
+        });
+
+        assertEquals(String.format("The contact with id %s does not exist", contact.getId()), exception.getMessage());
+        assertNull(exception.getDto());
+    }
+
+    @Test
+    void shouldCreateContact() {
+        /*
+        3.1 create — owner is taken from CurrentUserProvider, not from client
             3.1.1 boolean success == true
             3.1.2 HttpStatus httpStatus == HttpStatus.created
             3.1.3 List<String> errorMessages -> size == 0
@@ -338,22 +374,25 @@ class ContactServiceImplTest {
             3.1.9 contacts.saveAndFlush -> one called
          */
 
+
         String firstName = "Name0";
         String lastName = "lastName0";
         String telephone = "+7 (123) 456-78-90";
         String email = "email0@mail.ru";
 
+        ContactOwner owner = createContactOwner();
         ContactCreateDto dto = getContactCreateDto(firstName, lastName, telephone, email);
 
-        when(contacts.findByEmail(any(String.class))).thenReturn(Optional.empty());
-        when(contacts.findByTelephone(any(String.class))).thenReturn(Optional.empty());
+        when(currentUserProvider.getCurrentOwner()).thenReturn(owner);
+        when(contacts.findByOwnerIdAndEmail(anyLong(), any(String.class))).thenReturn(Optional.empty());
+        when(contacts.findByOwnerIdAndTelephone(anyLong(), any(String.class))).thenReturn(Optional.empty());
         when(contacts.saveAndFlush(any(Contact.class)))
                 .thenReturn(new Contact(1L, firstName, lastName, telephone, email, createContactOwner()));
 
         ServerResponse<ContactDto> response = contactService.createContact(dto);
 
-        verify(contacts, times(1)).findByEmail(any(String.class));
-        verify(contacts, times(1)).findByTelephone(any(String.class));
+        verify(contacts, times(1)).findByOwnerIdAndEmail(anyLong(), any(String.class));
+        verify(contacts, times(1)).findByOwnerIdAndTelephone(anyLong(), any(String.class));
         verify(contacts, times(1)).saveAndFlush(any(Contact.class));
 
         assertTrue(response.isSuccess());
@@ -369,114 +408,69 @@ class ContactServiceImplTest {
     }
 
     @Test
-    void ShouldCreateContactWhenContactsIsNonEmpty() {
+    void shouldNotCreateContactWhenErrorCreatingContact() {
         /*
-        3.2 create
-            3.2.1 boolean success == true
-            3.2.2 HttpStatus httpStatus == HttpStatus.created
-            3.2.3 List<String> errorMessages -> size == 0
-            3.2.4 result.contact id == 10
-            3.2.5 result.contact firstName == Name0
-            3.2.6 result.contact lastName == lastName0
-            3.2.7 result.contact telephone == +7 (123) 456-78-90
-            3.2.8 result.contact email == email0@mail.ru
-            3.2.9 contacts.saveAndFlush -> one called
-         */
-
-        String firstName = "Name0";
-        String lastName = "lastName0";
-        String telephone = "+7 234 567 89 20";
-        String email = "email0@mail.ru";
-
-        when(contacts.findByEmail(any(String.class))).thenReturn(Optional.empty());
-        when(contacts.findByTelephone(any(String.class))).thenReturn(Optional.empty());
-        when(contacts.saveAndFlush(any(Contact.class)))
-                .thenReturn(new Contact(10L, firstName, lastName, telephone, email, createContactOwner()));
-
-        ContactCreateDto dto = getContactCreateDto(firstName, lastName, telephone, email);
-
-        ServerResponse<ContactDto> response = contactService.createContact(dto);
-
-        verify(contacts, times(1)).findByEmail(any(String.class));
-        verify(contacts, times(1)).findByTelephone(any(String.class));
-        verify(contacts, times(1)).saveAndFlush(any(Contact.class));
-
-        assertTrue(response.isSuccess());
-        assertEquals(HttpStatus.CREATED, response.getHttpStatus());
-        assertEquals(0, response.getErrorMessages().size());
-
-        ContactDto contact = response.getResult();
-        assertEquals(10L, contact.getId());
-        assertEquals(firstName, contact.getFirstName());
-        assertEquals(lastName, contact.getLastName());
-        assertEquals(telephone, contact.getTelephone());
-        assertEquals(email, contact.getEmail());
-    }
-
-    @Test
-    void shouldNotCreateContactWhenErrorCreatingOwner() {
-        /*
-        3.3.1 EntityConflictException
-        3.3.2 errorMessages -> "Error creating contact"
-        3.3.3 exception.dto equals ContactDto
-        3.3.4 contacts.saveAndFlush -> one called
-        3.3.5 validator.validate -> one called
-        3.3.6 contacts.findByEmail -> one called
-        3.3.7 contacts.findByTelephone -> one called
-    */
-        Contact contact = initContacts().get(0);
+        3.2 EntityConflictException on DataIntegrityViolationException
+        3.2.1 EntityConflictException
+        3.2.2 errorMessages -> "Error creating contact"
+        3.2.3 exception.dto equals ContactDto
+        3.2.4 contacts.saveAndFlush -> one called
+        3.2.5 validator.validate -> one called
+        3.2.6 contacts.findByOwnerIdAndEmail -> one called
+        3.2.7 contacts.findByOwnerIdAndTelephone -> one called
+        */
+        Contact existing = initContacts().get(0);
+        ContactOwner owner = existing.getOwner();
 
         ContactCreateDto dto = getContactCreateDto(
-                contact.getFirstName(),
-                contact.getLastName(),
-                contact.getTelephone(),
-                contact.getEmail()
-        );
+                existing.getFirstName(), existing.getLastName(), existing.getTelephone(), existing.getEmail());
 
-        when(contacts.findByEmail(any(String.class))).thenReturn(Optional.empty());
-        when(contacts.findByTelephone(any(String.class))).thenReturn(Optional.empty());
+        when(currentUserProvider.getCurrentOwner()).thenReturn(owner);
+        when(contacts.findByOwnerIdAndEmail(anyLong(), any(String.class))).thenReturn(Optional.empty());
+        when(contacts.findByOwnerIdAndTelephone(anyLong(), any(String.class))).thenReturn(Optional.empty());
         when(contacts.saveAndFlush(any(Contact.class))).thenThrow(DataIntegrityViolationException.class);
 
         EntityConflictException exception = assertThrows(EntityConflictException.class, () -> {
             contactService.createContact(dto);
         });
 
-        verify(contacts, times(1)).findByEmail(any(String.class));
-        verify(contacts, times(1)).findByTelephone(any(String.class));
+        verify(contacts, times(1)).findByOwnerIdAndEmail(anyLong(), any(String.class));
+        verify(contacts, times(1)).findByOwnerIdAndTelephone(anyLong(), any(String.class));
         verify(contacts, times(1)).saveAndFlush(any(Contact.class));
 
         assertEquals("Error creating contact", exception.getMessage());
-        assertEquals(modelMapper.map(dto, ContactDto.class), exception.getDto());
     }
 
     @Test
     void shouldNotCreateContactWhenEmailAlreadyExist() {
         /*
-        3.4.1 EntityConflictException
-        3.4.2 errorMessages -> "Contact with this email: email0@mail.ru - already exist"
-        3.4.3 exception.dto equals ContactDto
-        3.4.4 contacts.saveAndFlush -> no called
-        3.4.5 validator.validate -> one called
-        3.4.6 contacts.findByEmail -> one called
-        3.4.7 contacts.findByTelephone -> no called
+        3.3.1 EntityConflictException
+        3.3.2 errorMessages -> "Contact with this email: email0@mail.ru - already exist"
+        3.3.3 exception.dto equals ContactDto
+        3.3.4 contacts.saveAndFlush -> no called
+        3.3.5 validator.validate -> one called
+        3.3.6 contacts.findByEmail -> one called
+        3.3.7 contacts.findByTelephone -> no called
         */
-        Contact contact = initContacts().get(0);
+        Contact existing = initContacts().get(0);
+        ContactOwner owner = existing.getOwner();
 
         ContactCreateDto dto = getContactCreateDto(
-                contact.getFirstName(),
-                contact.getLastName(),
-                contact.getTelephone(),
-                contact.getEmail()
+                existing.getFirstName(),
+                existing.getLastName(),
+                existing.getTelephone(),
+                existing.getEmail()
         );
 
-        when(contacts.findByEmail(any(String.class))).thenReturn(Optional.of(contact));
+        when(currentUserProvider.getCurrentOwner()).thenReturn(owner);
+        when(contacts.findByOwnerIdAndEmail(anyLong(), any(String.class))).thenReturn(Optional.of(existing));
 
         EntityConflictException exception = assertThrows(EntityConflictException.class, () -> {
             contactService.createContact(dto);
         });
 
-        verify(contacts, times(1)).findByEmail(any(String.class));
-        verify(contacts, never()).findByTelephone(any(String.class));
+        verify(contacts, times(1)).findByOwnerIdAndEmail(anyLong(), any(String.class));
+        verify(contacts, never()).findByOwnerIdAndTelephone(anyLong(), any(String.class));
         verify(contacts, never()).saveAndFlush(any(Contact.class));
 
         assertEquals("Contact with this email: email0@mail.ru - already exist", exception.getMessage());
@@ -486,32 +480,34 @@ class ContactServiceImplTest {
     @Test
     void shouldNotCreateContactWhenTelephoneAlreadyExist() {
         /*
-        3.5.1 EntityConflictException
-        3.5.2 errorMessages -> "Contact with this telephone: +72345678920 - already exist"
-        3.5.3 exception.dto equals ContactDto
-        3.5.4 contacts.saveAndFlush -> no called
-        3.5.5 validator.validate -> one called
-        3.5.6 contacts.findByEmail -> one called
-        3.5.7 contacts.findByTelephone -> one called
+        3.4.1 EntityConflictException
+        3.4.2 errorMessages -> "Contact with this telephone: +72345678920 - already exist"
+        3.4.3 exception.dto equals ContactDto
+        3.4.4 contacts.saveAndFlush -> no called
+        3.4.5 validator.validate -> one called
+        3.4.6 contacts.findByEmail -> one called
+        3.4.7 contacts.findByTelephone -> one called
         */
-        Contact contact = initContacts().get(0);
+        Contact existing  = initContacts().get(0);
+        ContactOwner owner = existing.getOwner();
 
         ContactCreateDto dto = getContactCreateDto(
-                contact.getFirstName(),
-                contact.getLastName(),
-                contact.getTelephone(),
-                contact.getEmail()
+                existing .getFirstName(),
+                existing .getLastName(),
+                existing .getTelephone(),
+                existing .getEmail()
         );
 
-        when(contacts.findByEmail(any(String.class))).thenReturn(Optional.empty());
-        when(contacts.findByTelephone(any(String.class))).thenReturn(Optional.of(contact));
+        when(currentUserProvider.getCurrentOwner()).thenReturn(owner);
+        when(contacts.findByOwnerIdAndEmail(anyLong(), any(String.class))).thenReturn(Optional.empty());
+        when(contacts.findByOwnerIdAndTelephone(anyLong(), any(String.class))).thenReturn(Optional.of(existing));
 
         EntityConflictException exception = assertThrows(EntityConflictException.class, () -> {
             contactService.createContact(dto);
         });
 
-        verify(contacts, times(1)).findByEmail(any(String.class));
-        verify(contacts, times(1)).findByTelephone(any(String.class));
+        verify(contacts, times(1)).findByOwnerIdAndEmail(anyLong(), any(String.class));
+        verify(contacts, times(1)).findByOwnerIdAndTelephone(anyLong(), any(String.class));
         verify(contacts, never()).saveAndFlush(any(Contact.class));
 
         assertEquals("Contact with this telephone: +72345678920 - already exist", exception.getMessage());
@@ -528,6 +524,7 @@ class ContactServiceImplTest {
         4.1.5 contacts.deleteContactById -> called once
         */
         Contact contact = initContacts().get(0);
+        when(currentUserProvider.getCurrentOwner()).thenReturn(contact.getOwner());
         when(contacts.findById(anyLong())).thenReturn(Optional.of(contact));
         doNothing().when(contacts).deleteById(anyLong());
 
@@ -556,10 +553,10 @@ class ContactServiceImplTest {
         Contact contact = initContacts().get(0);
         ContactDto expectedDto = mapToContactDto(List.of(contact)).get(0);
 
+        when(currentUserProvider.getCurrentOwner()).thenReturn(contact.getOwner());
         when(contacts.findById(7L))
                 .thenReturn(Optional.of(contact))
                 .thenReturn(Optional.empty());
-
         doNothing().when(contacts).deleteById(7L);
 
         ServerResponse<ContactDto> response = contactService.deleteContactById(7L);
@@ -574,7 +571,7 @@ class ContactServiceImplTest {
     }
 
     @Test
-    void shouldNotDeleteContactWhenIdNotExist() {
+    void shouldNotDeleteContactWhenBelongsToAnotherOwner() {
         /*
         4.3.1 boolean success == false
         4.3.2 HttpStatus httpStatus == HttpStatus.NO_CONTENT
@@ -584,16 +581,23 @@ class ContactServiceImplTest {
         4.3.6 contacts.findById -> one called
         4.3.7 contacts.deleteById -> no called
         */
-        when(contacts.findById(anyLong())).thenReturn(Optional.empty());
+        Contact contact = initContacts().get(0);
+        ContactOwner anotherOwner = ContactOwner.builder()
+                .id(999L)
+                .username("AnotherUser")
+                .email("another@mail.ru")
+                .password("P@ssw0rd1234")
+                .role(Role.ROLE_USER)
+                .birthday(LocalDate.now().minusYears(20))
+                .telephone("+79009998877")
+                .build();
 
-        NotFoundException exception = assertThrows(NotFoundException.class, () -> {
-            contactService.deleteContactById(13);
-        });
+        when(currentUserProvider.getCurrentOwner()).thenReturn(anotherOwner);
+        when(contacts.findById(anyLong())).thenReturn(Optional.of(contact));
 
-        assertEquals("The contact with id 13 does not exist", exception.getMessage());
-        assertNull(exception.getDto());
+        assertThrows(NotFoundException.class,
+                () -> contactService.deleteContactById(contact.getId()));
 
-        verify(contacts, times(1)).findById(anyLong());
         verify(contacts, never()).deleteById(anyLong());
     }
 
@@ -611,7 +615,8 @@ class ContactServiceImplTest {
         Contact contact = initContacts().get(0);
         ContactDto dto = modelMapper.map(contact, ContactDto.class);
 
-        when(contacts.existsById(anyLong())).thenReturn(true);
+        when(currentUserProvider.getCurrentOwner()).thenReturn(contact.getOwner());
+        when(contacts.findById(anyLong())).thenReturn(Optional.of(contact));
         when(contacts.findEmailById(anyLong())).thenReturn(Optional.of(contact.getEmail()));
         when(contacts.findTelephoneById(anyLong())).thenReturn(Optional.of(contact.getTelephone()));
         when(contacts.saveAndFlush(any(Contact.class))).thenThrow(DataIntegrityViolationException.class);
@@ -620,7 +625,6 @@ class ContactServiceImplTest {
             contactService.updateContact(dto);
         });
 
-        verify(contacts, times(1)).existsById(dto.getId());
         verify(contacts, times(1)).findEmailById(anyLong());
         verify(contacts, times(1)).findTelephoneById(anyLong());
         verify(contacts, times(1)).saveAndFlush(any(Contact.class));
@@ -645,20 +649,20 @@ class ContactServiceImplTest {
         Contact contact = initContacts().get(0);
         ContactDto dto = modelMapper.map(contact, ContactDto.class);
 
-        when(contacts.existsById(dto.getId())).thenReturn(true);
+        when(currentUserProvider.getCurrentOwner()).thenReturn(contact.getOwner());
+        when(contacts.findById(anyLong())).thenReturn(Optional.of(contact));
         when(contacts.findEmailById(anyLong())).thenReturn(Optional.of("other@mail.ru"));
-        when(contacts.findByEmail(any(String.class))).thenReturn(Optional.of(contact));
+        when(contacts.findByOwnerIdAndEmail(anyLong(), any(String.class))).thenReturn(Optional.of(contact));
 
         EntityConflictException exception = assertThrows(EntityConflictException.class, () -> {
                     contactService.updateContact(dto);
                 }
         );
 
-        verify(contacts, times(1)).existsById(dto.getId());
         verify(contacts, times(1)).findEmailById(dto.getId());
-        verify(contacts, times(1)).findByEmail(anyString());
+        verify(contacts, times(1)).findByOwnerIdAndEmail(anyLong(), anyString());
         verify(contacts, never()).findTelephoneById(anyLong());
-        verify(contacts, never()).findByTelephone(anyString());
+        verify(contacts, never()).findByOwnerIdAndTelephone(anyLong(), anyString());
         verify(contacts, never()).saveAndFlush(any(Contact.class));
 
         assertEquals(mapToContactDto(List.of(contact)).get(0), exception.getDto());
@@ -681,20 +685,20 @@ class ContactServiceImplTest {
         Contact contact = initContacts().get(0);
         ContactDto dto = modelMapper.map(contact, ContactDto.class);
 
-        when(contacts.existsById(dto.getId())).thenReturn(true);
+        when(currentUserProvider.getCurrentOwner()).thenReturn(contact.getOwner());
+        when(contacts.findById(anyLong())).thenReturn(Optional.of(contact));
         when(contacts.findEmailById(anyLong())).thenReturn(Optional.of(contact.getEmail()));
         when(contacts.findTelephoneById(anyLong())).thenReturn(Optional.of("other_telephone"));
-        when(contacts.findByTelephone(any(String.class))).thenReturn(Optional.of(contact));
+        when(contacts.findByOwnerIdAndTelephone(anyLong(), any(String.class))).thenReturn(Optional.of(contact));
 
         EntityConflictException exception = assertThrows(EntityConflictException.class, () -> {
                     contactService.updateContact(dto);
                 }
         );
 
-        verify(contacts, times(1)).existsById(dto.getId());
         verify(contacts, times(1)).findEmailById(anyLong());
         verify(contacts, times(1)).findTelephoneById(anyLong());
-        verify(contacts, times(1)).findByTelephone(any(String.class));
+        verify(contacts, times(1)).findByOwnerIdAndTelephone(anyLong(), any(String.class));
         verify(contacts, never()).saveAndFlush(any(Contact.class));
 
         assertEquals(mapToContactDto(List.of(contact)).get(0), exception.getDto());
@@ -704,6 +708,7 @@ class ContactServiceImplTest {
     @Test
     void shouldUpdateContactSuccessfully() {
         /*
+        positive case update first and last name
         5.4.1 boolean success == true
         5.4.2 HttpStatus httpStatus == HttpStatus.OK
         5.4.3 List<String> errorMessages -> size == 0
@@ -716,7 +721,8 @@ class ContactServiceImplTest {
         Contact contact = initContacts().get(0);
         ContactDto dto = modelMapper.map(contact, ContactDto.class);
 
-        when(contacts.existsById(dto.getId())).thenReturn(true);
+        when(currentUserProvider.getCurrentOwner()).thenReturn(contact.getOwner());
+        when(contacts.findById(anyLong())).thenReturn(Optional.of(contact));
         when(contacts.findEmailById(anyLong())).thenReturn(Optional.of(contact.getEmail()));
         when(contacts.findTelephoneById(anyLong())).thenReturn(Optional.of(contact.getTelephone()));
         when(contacts.saveAndFlush(any(Contact.class))).thenReturn(contact);
@@ -728,7 +734,7 @@ class ContactServiceImplTest {
         assertEquals(modelMapper.map(contact, ContactDto.class), response.getResult());
         assertTrue(response.getErrorMessages().isEmpty());
 
-        verify(contacts, times(1)).existsById(dto.getId());
+        verify(contacts, times(1)).findById(anyLong());
         verify(contacts, times(1)).findEmailById(anyLong());
         verify(contacts, times(1)).findTelephoneById(anyLong());
         verify(contacts, times(1)).saveAndFlush(any(Contact.class));
@@ -753,10 +759,11 @@ class ContactServiceImplTest {
         String newEmail = "newemail@mail.ru";
         dto.setEmail(newEmail);
 
-        when(contacts.existsById(dto.getId())).thenReturn(true);
+        when(currentUserProvider.getCurrentOwner()).thenReturn(contact.getOwner());
+        when(contacts.findById(anyLong())).thenReturn(Optional.of(contact));
         when(contacts.findEmailById(anyLong())).thenReturn(Optional.of(contact.getEmail()));
         when(contacts.findTelephoneById(anyLong())).thenReturn(Optional.of(PhoneNormalizer.normalize(contact.getTelephone())));
-        when(contacts.findByEmail(anyString())).thenReturn(Optional.empty());
+        when(contacts.findByOwnerIdAndEmail(anyLong(), anyString())).thenReturn(Optional.empty());
         when(contacts.saveAndFlush(any(Contact.class))).thenReturn(contact);
 
         ServerResponse<ContactDto> response = contactService.updateContact(dto);
@@ -766,11 +773,11 @@ class ContactServiceImplTest {
         assertEquals(modelMapper.map(contact, ContactDto.class), response.getResult());
         assertTrue(response.getErrorMessages().isEmpty());
 
-        verify(contacts, times(1)).existsById(dto.getId());
+        verify(contacts, times(1)).findById(dto.getId());
         verify(contacts, times(1)).findEmailById(anyLong());
         verify(contacts, times(1)).findTelephoneById(anyLong());
-        verify(contacts, times(1)).findByEmail(anyString());
-        verify(contacts, never()).findByTelephone(anyString());
+        verify(contacts, times(1)).findByOwnerIdAndEmail(anyLong(), anyString());
+        verify(contacts, never()).findByOwnerIdAndTelephone(anyLong(), anyString());
         verify(contacts, times(1)).saveAndFlush(any(Contact.class));
     }
 
@@ -793,10 +800,11 @@ class ContactServiceImplTest {
         String newTelephone = "+7 999 888 77 66";
         dto.setTelephone(newTelephone);
 
-        when(contacts.existsById(dto.getId())).thenReturn(true);
+        when(currentUserProvider.getCurrentOwner()).thenReturn(contact.getOwner());
+        when(contacts.findById(anyLong())).thenReturn(Optional.of(contact));
         when(contacts.findEmailById(anyLong())).thenReturn(Optional.of(contact.getEmail()));
         when(contacts.findTelephoneById(anyLong())).thenReturn(Optional.of(contact.getTelephone()));
-        when(contacts.findByTelephone(any(String.class))).thenReturn(Optional.empty());
+        when(contacts.findByOwnerIdAndTelephone(anyLong(), any(String.class))).thenReturn(Optional.empty());
         when(contacts.saveAndFlush(any(Contact.class))).thenReturn(contact);
 
         ServerResponse<ContactDto> response = contactService.updateContact(dto);
@@ -806,11 +814,11 @@ class ContactServiceImplTest {
         assertEquals(modelMapper.map(contact, ContactDto.class), response.getResult());
         assertTrue(response.getErrorMessages().isEmpty());
 
-        verify(contacts, times(1)).existsById(dto.getId());
+        verify(contacts, times(1)).findById(dto.getId());
         verify(contacts, times(1)).findEmailById(anyLong());
         verify(contacts, times(1)).findTelephoneById(anyLong());
-        verify(contacts, never()).findByEmail(any(String.class));
-        verify(contacts, times(1)).findByTelephone(any(String.class));
+        verify(contacts, never()).findByOwnerIdAndEmail(anyLong(), any(String.class));
+        verify(contacts, times(1)).findByOwnerIdAndTelephone(anyLong(), any(String.class));
         verify(contacts, times(1)).saveAndFlush(any(Contact.class));
     }
 
@@ -833,7 +841,8 @@ class ContactServiceImplTest {
         ContactDto dto = modelMapper.map(contact, ContactDto.class);
         dto.setId(14L);
 
-        when(contacts.existsById(dto.getId())).thenReturn(false);
+        when(currentUserProvider.getCurrentOwner()).thenReturn(contact.getOwner());
+        when(contacts.findById(anyLong())).thenReturn(Optional.empty());
 
         NotFoundException exception = assertThrows(NotFoundException.class, () -> {
             contactService.updateContact(dto);
@@ -842,11 +851,38 @@ class ContactServiceImplTest {
         assertEquals("The contact with id 14 does not exist", exception.getMessage());
         assertEquals(dto, exception.getDto());
 
-        verify(contacts, times(1)).existsById(dto.getId());
+        verify(contacts, times(1)).findById(dto.getId());
         verify(contacts, never()).findEmailById(anyLong());
         verify(contacts, never()).findTelephoneById(anyLong());
-        verify(contacts, never()).findByEmail(any(String.class));
-        verify(contacts, never()).findByTelephone(any(String.class));
+        verify(contacts, never()).findByOwnerIdAndEmail(anyLong(), any(String.class));
+        verify(contacts, never()).findByOwnerIdAndTelephone(anyLong(), any(String.class));
+        verify(contacts, never()).saveAndFlush(any(Contact.class));
+    }
+
+    @Test
+    void shouldNotUpdateContactWhenBelongsToAnotherOwner() {
+        /*
+        5.7 (extra) NotFoundException when contact belongs to a different owner
+        */
+        Contact contact = initContacts().get(0);
+        ContactDto dto = modelMapper.map(contact, ContactDto.class);
+
+        ContactOwner anotherOwner = ContactOwner.builder()
+                .id(999L)
+                .username("AnotherUser")
+                .email("another@mail.ru")
+                .password("P@ssw0rd1234")
+                .role(Role.ROLE_USER)
+                .birthday(LocalDate.now().minusYears(20))
+                .telephone("+79009998877")
+                .build();
+
+        when(currentUserProvider.getCurrentOwner()).thenReturn(anotherOwner);
+        when(contacts.findById(dto.getId())).thenReturn(Optional.of(contact));
+
+        NotFoundException exception = assertThrows(NotFoundException.class, () -> contactService.updateContact(dto));
+
+        assertEquals(dto, exception.getDto());
         verify(contacts, never()).saveAndFlush(any(Contact.class));
     }
 
@@ -859,11 +895,13 @@ class ContactServiceImplTest {
     }
 
     private List<ContactDto> mapToContactDto(List<Contact> contacts) {
-        return contacts.stream().map(contact -> modelMapper.map(contact, ContactDto.class)).toList();
+        return contacts.stream()
+                .map(contact -> modelMapper.map(contact, ContactDto.class))
+                .toList();
     }
 
     private ContactCreateDto getContactCreateDto(String firstName, String lastName, String telephone, String email) {
-        return new ContactCreateDto(firstName, lastName, telephone, email, createContactOwner());
+        return new ContactCreateDto(firstName, lastName, telephone, email);
     }
 
     private ContactOwner createContactOwner() {

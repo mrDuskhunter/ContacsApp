@@ -12,7 +12,7 @@ import ru.duskhunter.contacsapp.service.ContactService;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/contact")
+@RequestMapping("/api/v1/contacts")
 public class ContactController {
     private final ContactService contactService;
 
@@ -21,28 +21,28 @@ public class ContactController {
         this.contactService = contactService;
     }
 
-    @GetMapping("/get")
+    @GetMapping
     public ServerResponse<List<ContactDto>> getContacts() {
-        return contactService.getContacts();
+        return contactService.getContactsForCurrentOwner();
     }
 
-    @GetMapping("/get/{id}")
+    @GetMapping("/{id}")
     public ServerResponse<ContactDto> getContactById(@PathVariable long id) {
         return contactService.getContactById(id);
     }
 
     @ResponseStatus(HttpStatus.CREATED)
-    @PostMapping("/create")
+    @PostMapping
     public ServerResponse<ContactDto> createContact(@Valid @RequestBody ContactCreateDto contact) {
         return contactService.createContact(contact);
     }
 
-    @DeleteMapping("/delete/{id}")
+    @DeleteMapping("/{id}")
     public ServerResponse<ContactDto> deleteContact(@PathVariable long id) {
         return contactService.deleteContactById(id);
     }
 
-    @PutMapping("/update")
+    @PutMapping
     public ServerResponse<ContactDto> updateContact(@RequestBody ContactDto contact) {
         return contactService.updateContact(contact);
     }

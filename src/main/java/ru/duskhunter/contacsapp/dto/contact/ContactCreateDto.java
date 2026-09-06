@@ -1,10 +1,15 @@
 package ru.duskhunter.contacsapp.dto.contact;
 
-import jakarta.validation.constraints.*;
-import lombok.*;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 import ru.duskhunter.contacsapp.common.util.EmailNormalizer;
 import ru.duskhunter.contacsapp.common.util.PhoneNormalizer;
-import ru.duskhunter.contacsapp.model.entity.ContactOwner;
 
 import java.util.Objects;
 
@@ -28,9 +33,6 @@ public class ContactCreateDto {
     @Email(message = "incorrect email")
     @Size(min = 2, max = 50, message = "email max size: 50")
     private String email;
-
-    @NotNull(message = "Owner cannot be null")
-    private ContactOwner owner;
 
     @Override
     public boolean equals(Object o) {
