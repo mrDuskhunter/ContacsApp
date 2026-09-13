@@ -1,5 +1,6 @@
-package ru.duskhunter.contacsapp.controller;
+package ru.duskhunter.contacsapp.controller.api;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -9,7 +10,6 @@ import org.springframework.web.bind.annotation.RestController;
 import ru.duskhunter.contacsapp.common.util.ServerResponseHelper;
 import ru.duskhunter.contacsapp.dto.ServerResponse;
 import ru.duskhunter.contacsapp.dto.secure.*;
-import ru.duskhunter.contacsapp.model.entity.ContactOwner;
 import ru.duskhunter.contacsapp.service.security.AuthService;
 
 import java.util.List;
@@ -21,7 +21,7 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/register")
-    public ServerResponse<ContactOwner> register(@RequestBody RegisterRequestDto registerRequestDto) {
+    public ServerResponse<RegisterResponseDto> register(@Valid @RequestBody RegisterRequestDto registerRequestDto) {
         return ServerResponseHelper.response(true, authService.register(registerRequestDto), HttpStatus.OK, List.of());
     }
 

@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -11,6 +12,7 @@ import ru.duskhunter.contacsapp.dto.secure.*;
 import ru.duskhunter.contacsapp.model.Role;
 import ru.duskhunter.contacsapp.model.entity.ContactOwner;
 import ru.duskhunter.contacsapp.model.repository.ContactOwnerRepo;
+import ru.duskhunter.contacsapp.service.ContactOwnerService;
 
 import java.util.HashMap;
 
@@ -21,11 +23,20 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtSecurityService jwtSecurityService;
     private final AuthenticationManager authenticationManager;
+    private final ContactOwnerService contactOwnerService;
 
-    public ContactOwner register(RegisterRequestDto registerRequestDto) {
-        ContactOwner contactOwner = ContactOwner.builder().username(registerRequestDto.getUser()).email(registerRequestDto.getEmail()).password(passwordEncoder.encode(registerRequestDto.getPassword())).role(Role.ROLE_USER).build();
+    public RegisterResponseDto register(RegisterRequestDto registerRequestDto) {
+        ContactOwner contactOwner = ContactOwner.builder()
+                .username(registerRequestDto.getUser())
+                .email(registerRequestDto.getEmail())
+                .password(passwordEncoder.encode(registerRequestDto.getPassword()))
+                .role(Role.ROLE_USER).build();
 
-        return contactOwnerRepo.save(contactOwner);
+        ContactOwner owner = contactOwnerRepo.save(contactOwner);
+
+        return RegisterResponseDto.builder()
+                .user(owner.getUsername())
+                .email(owner.getEmail()).build();
     }
 
     public LoginResponseDto login(LoginRequestDto loginRequestDto) {
@@ -54,7 +65,9 @@ public class AuthService {
         String email = jwtSecurityService.extractEmail(jwt);
         ContactOwner contactOwner = contactOwnerRepo.findByEmail(email).orElseThrow(() -> new UsernameNotFoundException("User not found"));
 
-        if (jwtSecurityService.validateToken(jwt, contactOwner)) {
+        UserDetails userDetails = contactOwnerService.getUserDetailsService().loadUserByUsername(email);
+
+        if (jwtSecurityService.validateToken(jwt, userDetails)) {
             RefreshTokenResponseDto refreshTokenResponseDto = new RefreshTokenResponseDto();
 
             refreshTokenResponseDto.setToken(jwtSecurityService.generateToken(contactOwner));
@@ -62,7 +75,6 @@ public class AuthService {
 
             return refreshTokenResponseDto;
         }
-
         return null;
     }
 }

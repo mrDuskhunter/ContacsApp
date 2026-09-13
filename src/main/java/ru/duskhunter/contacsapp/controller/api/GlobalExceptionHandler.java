@@ -1,8 +1,10 @@
-package ru.duskhunter.contacsapp.controller;
+package ru.duskhunter.contacsapp.controller.api;
 
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -67,5 +69,17 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ServerResponse<Object> handleValidationException(ValidationException ex) {
         return ServerResponseHelper.response(false, ex.getDto(), HttpStatus.BAD_REQUEST, ex.getErrors());
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ServerResponse<Object> handleAccessDenied(AccessDeniedException ex) {
+        return ServerResponseHelper.response(false, null, HttpStatus.FORBIDDEN, List.of(ex.getMessage()));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ServerResponse<Object> handleHttpMessageNotReadableException(HttpMessageNotReadableException ex) {
+        return ServerResponseHelper.response(false, null, HttpStatus.BAD_REQUEST, List.of("Invalid JSON format"));
     }
 }

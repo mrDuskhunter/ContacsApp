@@ -36,21 +36,27 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         String jwt = header.substring(7);
-        String email = jwtSecurityService.extractEmail(jwt);
 
-        if (StringUtils.isNotEmpty(email) && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails userDetails = contactOwnerService
-                    .getUserDetailsService()
-                    .loadUserByUsername(email);
+        try {
+            String email = jwtSecurityService.extractEmail(jwt);
 
-            if (jwtSecurityService.validateToken(jwt, userDetails)) {
-                SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+            if (StringUtils.isNotEmpty(email) && SecurityContextHolder.getContext().getAuthentication() == null) {
+                UserDetails userDetails = contactOwnerService
+                        .getUserDetailsService()
+                        .loadUserByUsername(email);
 
-                UsernamePasswordAuthenticationToken token = new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
-                token.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                securityContext.setAuthentication(token);
-                SecurityContextHolder.setContext(securityContext);
+                if (jwtSecurityService.validateToken(jwt, userDetails)) {
+                    SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+
+                    UsernamePasswordAuthenticationToken token = new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                    token.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    securityContext.setAuthentication(token);
+                    SecurityContextHolder.setContext(securityContext);
+                }
             }
+        } catch (Exception e) {
+            SecurityContextHolder.clearContext();
         }
+        filterChain.doFilter(request, response);
     }
 }

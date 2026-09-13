@@ -1,10 +1,10 @@
 package ru.duskhunter.contacsapp.service.security;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import ru.duskhunter.contacsapp.model.entity.ContactOwner;
@@ -35,23 +35,18 @@ public class JwtSecurityService {
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
-    public String generateToken(UserDetails userDetails) {
-        ContactOwner contactOwner = (ContactOwner) userDetails;
+    public String generateToken(ContactOwner contactOwner) {
         return Jwts.builder()
                 .subject(contactOwner.getEmail())
                 .claim("contactOwnerId", contactOwner.getId())
-                .claim("role", contactOwner.getAuthorities().stream()
-                        .findFirst()
-                        .map(GrantedAuthority::getAuthority)
-                        .orElse("USER"))
+                .claim("role", contactOwner.getRole() != null ? contactOwner.getRole().name() : "USER")
                 .issuedAt(new Date(System.currentTimeMillis())) // когда выдан токен
                 .expiration(new Date(System.currentTimeMillis() + 1000 * 60 * 24)) //время жизни токена
                 .signWith(getSigningKey()) //подпись токена
                 .compact();
     }
 
-    public String generateRefreshToken(Map<String, String> claims, UserDetails userDetails) {
-        ContactOwner contactOwner = (ContactOwner) userDetails;
+    public String generateRefreshToken(Map<String, String> claims, ContactOwner contactOwner) {
         return Jwts.builder()
                 .claims(claims)
                 .subject(contactOwner.getEmail())
@@ -67,11 +62,15 @@ public class JwtSecurityService {
     }
 
     private Claims extractAllClaims(String token) {
-        return Jwts.parser()
-                .verifyWith(getSigningKey())
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
+        try {
+            return Jwts.parser()
+                    .verifyWith(getSigningKey())
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+        } catch (ExpiredJwtException e) {
+            return e.getClaims();
+        }
     }
 
     public String extractEmail(String token) {

@@ -1,4 +1,4 @@
-package ru.duskhunter.contacsapp.controller;
+package ru.duskhunter.contacsapp.controller.api;
 
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
