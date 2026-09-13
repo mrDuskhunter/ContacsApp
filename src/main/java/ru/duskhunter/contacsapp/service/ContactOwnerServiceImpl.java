@@ -6,6 +6,11 @@ import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.duskhunter.contacsapp.common.util.EmailNormalizer;
@@ -22,6 +27,7 @@ import ru.duskhunter.contacsapp.exception.ValidationException;
 import ru.duskhunter.contacsapp.model.entity.ContactOwner;
 import ru.duskhunter.contacsapp.model.repository.ContactOwnerRepo;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -151,6 +157,14 @@ public class ContactOwnerServiceImpl implements ContactOwnerService {
         }
     }
 
+    @Override
+    public ServerResponse<ContactOwnerDto> getOwnerByEmail(String email) {
+        Optional<ContactOwner> contactOwnerOptional = ownerRepo.findByEmail(email);
+
+        return contactOwnerOptional.map(contact -> ServerResponseHelper.response(true, mapper.map(contact, ContactOwnerDto.class), HttpStatus.OK, List.of()))
+                .orElseThrow(() -> new NotFoundException(String.format("User with email %s does not exist", email), null));
+    }
+
     private void assertNotTaken(boolean alreadyExists, String message, ContactOwner owner) {
         if (alreadyExists) {
             throw new EntityConflictException(message, mapper.map(owner, ContactOwnerDto.class));
@@ -159,5 +173,22 @@ public class ContactOwnerServiceImpl implements ContactOwnerService {
 
     private String getMessageForErrorOwnerIdNotExist(long ownerId) {
         return String.format("The owner with id %d does not exist", ownerId);
+    }
+
+    @Override
+    public UserDetailsService getUserDetailsService() {
+        return new UserDetailsService(){
+            @Override
+            public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+                ContactOwner contactOwner = ownerRepo
+                        .findByEmail(username)
+                        .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + username));
+                return new User(
+                                contactOwner.getEmail(),
+                                contactOwner.getPassword(),
+                        Collections.singletonList(new SimpleGrantedAuthority(contactOwner.getRole().name()))
+                );
+            }
+        };
     }
 }

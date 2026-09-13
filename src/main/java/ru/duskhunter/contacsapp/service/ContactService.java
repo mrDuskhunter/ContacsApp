@@ -7,7 +7,7 @@ import ru.duskhunter.contacsapp.dto.contact.ContactDto;
 import java.util.List;
 
 public interface ContactService {
-    ServerResponse<List<ContactDto>> getContacts();
+    ServerResponse<List<ContactDto>> getContactsForCurrentOwner();
     ServerResponse<ContactDto> getContactById(long contactId);
     ServerResponse<ContactDto> createContact(ContactCreateDto contact);
     ServerResponse<ContactDto> deleteContactById(long contactId);

@@ -1,5 +1,6 @@
 package ru.duskhunter.contacsapp.model.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import lombok.Getter;
@@ -8,6 +9,7 @@ import lombok.Setter;
 import lombok.experimental.SuperBuilder;
 import ru.duskhunter.contacsapp.common.util.EmailNormalizer;
 import ru.duskhunter.contacsapp.common.util.PhoneNormalizer;
+import ru.duskhunter.contacsapp.common.util.Utils;
 import ru.duskhunter.contacsapp.model.Role;
 
 import java.time.LocalDate;
@@ -31,7 +33,7 @@ public class ContactOwner extends BaseEntity {
 
     @Column(name = "email", nullable = false, unique = true, length = 50)
     @NotNull(message = "Email cannot be empty")
-    @Pattern(regexp = "^(?=.{1,50}$)[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,50}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,50}[a-zA-Z0-9])?)$", message = "Incorrect email")
+    @Pattern(regexp = Utils.regexEmail , message = "Incorrect email")
     private String email;
 
     @Column(name = "telephone", nullable = false, unique = true, length = 12)
@@ -47,9 +49,11 @@ public class ContactOwner extends BaseEntity {
         (?=.*[!@#$%^&*]) — гарантирует наличие хотя бы одного специального символа;
         .{8,} — минимальная длина пароля (8 символов);
      */
-    @Pattern(regexp = "(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[\"!@#$%^&*_-]).{8,50}", message = "Incorrect password")
+//    @Pattern(regexp = "(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[\"!@#$%^&*_-]).{8,50}", message = "Incorrect password")
     @Column(name = "password", nullable = false, length = 60)
+    @Size(min = 8, max = 100, message = "Incorrect password")
     @NotNull(message = "Password cannot be empty")
+    @JsonIgnore
     private String password;
 
     @Enumerated(EnumType.STRING)

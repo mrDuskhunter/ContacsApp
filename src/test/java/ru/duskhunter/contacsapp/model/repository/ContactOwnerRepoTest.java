@@ -111,7 +111,7 @@ class ContactOwnerRepoTest {
                 .birthday(LocalDate.now().minusYears(20))
                 .email("x".repeat(23) + "@" + "x".repeat(22) + ".com")
                 .telephone("+79001112233")
-                .password("P@ssw0rd1234_QwErt" + "x".repeat(32))
+                .password("P@ssw0rd1234_QwErt" + "x".repeat(100-"P@ssw0rd1234_QwErt".length()))
                 .role(Role.ROLE_USER)
                 .build();
 
@@ -327,7 +327,7 @@ class ContactOwnerRepoTest {
     void testSaveContactOwnerWithInvalidPassword(String testCase, String invalidPassword, String expectedMessage) {
         /*
         1.5.NegativeCase password.
-            1.5.1. password < 8, > 50, non-upper, non-lower, non-specSymbols, non-digit -> "Incorrect password"
+            1.5.1. password < 8, > 100 -> "Incorrect password"
             1.5.2. password is null -> "Password cannot be empty"
          */
 
@@ -360,11 +360,11 @@ class ContactOwnerRepoTest {
         return Stream.of(
                 Arguments.of("null password", null, "Password cannot be empty"),
                 Arguments.of("password < 8 chars", "P@ss1", "Incorrect password"),
-                Arguments.of("password > 50 chars", "P@ssw0rd1234_QwErt" + "x".repeat(43), "Incorrect password"),
-                Arguments.of("password without uppercase", "p@ssword123", "Incorrect password"),
-                Arguments.of("password without lowercase", "P@SSWORD123", "Incorrect password"),
-                Arguments.of("password without digit", "P@sswordPassword", "Incorrect password"),
-                Arguments.of("password without special char", "Password1234Password", "Incorrect password")
+                Arguments.of("password > 100 chars", "P@ssw0rd1234_QwErt" + "x".repeat(101-"P@ssw0rd1234_QwErt".length()), "Incorrect password")
+//                Arguments.of("password without uppercase", "p@ssword123", "Incorrect password"),
+//                Arguments.of("password without lowercase", "P@SSWORD123", "Incorrect password"),
+//                Arguments.of("password without digit", "P@sswordPassword", "Incorrect password"),
+//                Arguments.of("password without special char", "Password1234Password", "Incorrect password")
         );
     }
 
